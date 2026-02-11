@@ -13,11 +13,11 @@ function getBaseURL(): string {
   // This allows cross-machine access without rebuilding (Issue #777)
   if (typeof window !== "undefined") {
     const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:8000/api/`;
+    return `${protocol}//${hostname}:8003/api/`;
   }
 
   // Fallback for SSR or when window is not available
-  return "http://localhost:8000/api/";
+  return "http://localhost:8003/api/";
 }
 
 export function resolveServiceURL(path: string) {
