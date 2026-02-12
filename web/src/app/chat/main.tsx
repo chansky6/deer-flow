@@ -20,7 +20,7 @@ export default function Main() {
   const [restoring, setRestoring] = useState(true);
 
   useEffect(() => {
-    restoreSession().finally(() => setRestoring(false));
+    void restoreSession().finally(() => setRestoring(false));
   }, []);
 
   if (restoring) {
