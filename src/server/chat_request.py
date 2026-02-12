@@ -120,6 +120,10 @@ class GenerateProseRequest(BaseModel):
     )
 
 
+class UpdateConversationRequest(BaseModel):
+    title: str = Field(..., max_length=500)
+
+
 class EnhancePromptRequest(BaseModel):
     prompt: str = Field(..., description="The original prompt to enhance")
     context: Optional[str] = Field(

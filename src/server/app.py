@@ -39,7 +39,16 @@ from src.config.report_style import ReportStyle
 from src.config.tools import SELECTED_RAG_PROVIDER
 from src.citations import merge_citations
 from src.graph.builder import build_graph_with_memory
-from src.graph.checkpoint import chat_stream_message, get_chat_stream_history
+from src.graph.checkpoint import (
+    chat_stream_message,
+    create_conversation,
+    delete_conversation,
+    get_chat_stream_history,
+    get_conversation,
+    list_conversations,
+    touch_conversation,
+    update_conversation_title,
+)
 from src.server.workflow_manager import WorkflowManager
 from src.graph.utils import (
     build_clarified_topic_from_history,
@@ -62,6 +71,7 @@ from src.server.chat_request import (
     GeneratePPTRequest,
     GenerateProseRequest,
     TTSRequest,
+    UpdateConversationRequest,
 )
 from src.server.eval_request import EvaluateReportRequest, EvaluateReportResponse
 from src.server.auth import auth_router, is_auth_enabled, require_auth
@@ -250,7 +260,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,  # Restrict to specific origins
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],  # Use the configured list of methods
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],  # Use the configured list of methods
     allow_headers=["*"],  # Now allow all headers, but can be restricted further
 )
 # Load examples into RAG providers if configured
@@ -281,6 +291,24 @@ async def chat_stream(request: ChatRequest, _user=Depends(require_auth)):
     thread_id = request.thread_id
     if thread_id == "__default__":
         thread_id = str(uuid4())
+
+    # Auto-create / touch conversation record for authenticated users
+    if _user is not None:
+        user_id = _user.get("id", "")
+        existing_conv = get_conversation(thread_id)
+        if existing_conv is None:
+            # Derive title from first user message, truncated to 100 chars
+            first_content = ""
+            if request.messages:
+                msg_content = request.messages[0].content
+                if isinstance(msg_content, str):
+                    first_content = msg_content
+                elif isinstance(msg_content, list) and msg_content:
+                    first_content = msg_content[0].text or ""
+            title = (first_content[:100] or "New Conversation").strip()
+            create_conversation(thread_id, user_id, title)
+        else:
+            touch_conversation(thread_id)
 
     messages = request.model_dump()["messages"]
     mcp_settings = request.mcp_settings if mcp_enabled else {}
@@ -367,6 +395,12 @@ async def chat_workflow_status(thread_id: str, _user=Depends(require_auth)):
     safe_thread_id = sanitize_thread_id(thread_id)
     logger.debug(f"[{safe_thread_id}] Checking workflow status")
 
+    # Ownership check
+    if _user is not None:
+        conv = get_conversation(thread_id)
+        if conv and conv.get("user_id") != _user.get("id", ""):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
     if not _workflow_manager:
         return {"thread_id": thread_id, "status": "not_found", "event_count": 0}
 
@@ -414,12 +448,61 @@ async def chat_history(thread_id: str, _user=Depends(require_auth)):
     """Retrieve stored SSE events for a given thread_id to restore a session."""
     safe_thread_id = sanitize_thread_id(thread_id)
     logger.debug(f"[{safe_thread_id}] Retrieving chat history")
+
+    # Ownership check
+    if _user is not None:
+        conv = get_conversation(thread_id)
+        if conv and conv.get("user_id") != _user.get("id", ""):
+            raise HTTPException(status_code=403, detail="Forbidden")
+
     try:
         result = get_chat_stream_history(thread_id)
         return result
     except Exception as e:
         logger.exception(f"[{safe_thread_id}] Error retrieving chat history")
         raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_DETAIL)
+
+
+@app.get("/api/conversations")
+async def list_user_conversations(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _user=Depends(require_auth),
+):
+    """List conversations for the authenticated user."""
+    if _user is None:
+        return {"conversations": []}
+    user_id = _user.get("id", "")
+    conversations = list_conversations(user_id, limit, offset)
+    return {"conversations": conversations}
+
+
+@app.patch("/api/conversations/{thread_id}")
+async def update_conversation(
+    thread_id: str,
+    request: UpdateConversationRequest,
+    _user=Depends(require_auth),
+):
+    """Update a conversation's title."""
+    if _user is None:
+        raise HTTPException(status_code=403, detail="Auth required")
+    user_id = _user.get("id", "")
+    success = update_conversation_title(thread_id, user_id, request.title)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found or not owned by user")
+    return {"success": True}
+
+
+@app.delete("/api/conversations/{thread_id}")
+async def delete_user_conversation(thread_id: str, _user=Depends(require_auth)):
+    """Delete a conversation and its associated chat stream data."""
+    if _user is None:
+        raise HTTPException(status_code=403, detail="Auth required")
+    user_id = _user.get("id", "")
+    success = delete_conversation(thread_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found or not owned by user")
+    return {"success": True}
 
 
 def _validate_tool_call_chunks(tool_call_chunks):

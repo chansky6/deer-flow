@@ -206,6 +206,13 @@
       "playPause": "Play / Pause",
       "moveToNext": "Move to the next step",
       "toggleFullscreen": "Toggle fullscreen"
+    },
+    "sidebar": {
+      "title": "Conversations",
+      "newConversation": "New Conversation",
+      "noConversations": "No conversations yet",
+      "collapse": "Collapse sidebar",
+      "expand": "Expand sidebar"
     }
   },
   "auth": {

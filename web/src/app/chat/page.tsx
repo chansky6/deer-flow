@@ -18,6 +18,7 @@ import { Tooltip } from "../../components/deer-flow/tooltip";
 import { useConfig } from "../../core/api/hooks";
 import { resolveServiceURL } from "../../core/api/resolve-service-url";
 import { SettingsDialog } from "../settings/dialogs/settings-dialog";
+import { ConversationSidebar } from "./components/conversation-sidebar";
 
 const Main = dynamic(() => import("./main"), {
   ssr: false,
@@ -79,39 +80,44 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex h-screen w-screen justify-center overscroll-none">
-      <header className="fixed top-0 left-0 flex h-12 w-full items-center justify-between px-4">
-        <Logo />
-        <div className="flex items-center gap-1">
-          {user && (
-            <span className="text-muted-foreground mr-1 text-sm">
-              {user.username}
-            </span>
-          )}
-          <Tooltip title={t("starOnGitHub")}>
-            <Button variant="ghost" size="icon" asChild>
-              <Link
-                href="https://github.com/bytedance/deer-flow"
-                target="_blank"
-              >
-                <GithubOutlined />
-              </Link>
-            </Button>
-          </Tooltip>
-          <ThemeToggle />
-          <Suspense>
-            <SettingsDialog />
-          </Suspense>
-          {user && (
-            <Tooltip title={tAuth("logout")}>
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
-                <LogoutOutlined />
+    <div className="flex h-screen w-screen overscroll-none">
+      {user && <ConversationSidebar />}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 w-full shrink-0 items-center justify-between px-4">
+          <Logo />
+          <div className="flex items-center gap-1">
+            {user && (
+              <span className="text-muted-foreground mr-1 text-sm">
+                {user.username}
+              </span>
+            )}
+            <Tooltip title={t("starOnGitHub")}>
+              <Button variant="ghost" size="icon" asChild>
+                <Link
+                  href="https://github.com/bytedance/deer-flow"
+                  target="_blank"
+                >
+                  <GithubOutlined />
+                </Link>
               </Button>
             </Tooltip>
-          )}
+            <ThemeToggle />
+            <Suspense>
+              <SettingsDialog />
+            </Suspense>
+            {user && (
+              <Tooltip title={tAuth("logout")}>
+                <Button variant="ghost" size="icon" onClick={handleLogout}>
+                  <LogoutOutlined />
+                </Button>
+              </Tooltip>
+            )}
+          </div>
+        </header>
+        <div className="flex-1 overflow-hidden">
+          <Main />
         </div>
-      </header>
-      <Main />
+      </div>
     </div>
   );
 }

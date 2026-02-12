@@ -313,3 +313,50 @@ function parseSSEEvent(chunk: string): ChatEvent | undefined {
     return undefined;
   }
 }
+
+// --- Conversation CRUD APIs ---
+
+export interface Conversation {
+  id: string;
+  thread_id: string;
+  user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchConversations(
+  limit = 50,
+  offset = 0,
+): Promise<{ conversations: Conversation[] }> {
+  const res = await fetch(
+    resolveServiceURL(`conversations?limit=${limit}&offset=${offset}`),
+    { method: "GET", credentials: "include" },
+  );
+  if (!res.ok) return { conversations: [] };
+  return (await res.json()) as { conversations: Conversation[] };
+}
+
+export async function deleteConversation(threadId: string): Promise<boolean> {
+  const res = await fetch(
+    resolveServiceURL(`conversations/${encodeURIComponent(threadId)}`),
+    { method: "DELETE", credentials: "include" },
+  );
+  return res.ok;
+}
+
+export async function updateConversationTitle(
+  threadId: string,
+  title: string,
+): Promise<boolean> {
+  const res = await fetch(
+    resolveServiceURL(`conversations/${encodeURIComponent(threadId)}`),
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    },
+  );
+  return res.ok;
+}

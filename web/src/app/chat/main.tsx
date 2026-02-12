@@ -34,7 +34,7 @@ export default function Main() {
   return (
     <div
       className={cn(
-        "flex h-full w-full justify-center-safe px-4 pt-12 pb-4",
+        "flex h-full w-full justify-center-safe px-4 pb-4",
         doubleColumnMode && "gap-8",
       )}
     >

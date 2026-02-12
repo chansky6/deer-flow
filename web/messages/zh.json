@@ -206,6 +206,13 @@
       "playPause": "播放 / 暂停",
       "moveToNext": "移动到下一步",
       "toggleFullscreen": "切换全屏"
+    },
+    "sidebar": {
+      "title": "会话列表",
+      "newConversation": "新建会话",
+      "noConversations": "暂无会话",
+      "collapse": "收起侧边栏",
+      "expand": "展开侧边栏"
     }
   },
   "auth": {

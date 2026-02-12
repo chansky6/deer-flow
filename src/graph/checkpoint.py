@@ -608,3 +608,334 @@ def get_chat_stream_history(thread_id: str) -> dict:
         "messages": messages,
         "available": True,
     }
+
+
+class ConversationManager:
+    """
+    Manages conversation metadata (title, user ownership, timestamps).
+
+    Sits on top of the same DB connection pattern as ChatStreamManager,
+    storing per-user conversation records that reference thread_ids.
+    """
+
+    def __init__(
+        self, checkpoint_saver: bool = False, db_uri: Optional[str] = None
+    ) -> None:
+        self.logger = logging.getLogger(__name__)
+        self.checkpoint_saver = checkpoint_saver
+        self.db_uri = db_uri
+
+        self.mongo_client = None
+        self.mongo_db = None
+        self.postgres_conn = None
+
+        if self.checkpoint_saver:
+            if self.db_uri is None:
+                self.logger.warning(
+                    "ConversationManager: checkpoint saver enabled but db_uri is None."
+                )
+            elif self.db_uri.startswith("mongodb://"):
+                self._init_mongodb()
+            elif self.db_uri.startswith("postgresql://") or self.db_uri.startswith(
+                "postgres://"
+            ):
+                self._init_postgresql()
+
+    def _init_mongodb(self) -> None:
+        try:
+            self.mongo_client = MongoClient(self.db_uri)
+            self.mongo_db = self.mongo_client.checkpointing_db
+            # Ensure indexes
+            collection = self.mongo_db.conversations
+            collection.create_index("thread_id", unique=True)
+            collection.create_index("user_id")
+            collection.create_index([("updated_at", -1)])
+            self.logger.info("ConversationManager: MongoDB initialized")
+        except Exception as e:
+            self.logger.error(f"ConversationManager: MongoDB init failed: {e}")
+
+    def _init_postgresql(self) -> None:
+        try:
+            self.postgres_conn = psycopg.connect(self.db_uri, row_factory=dict_row)
+            self._create_conversations_table()
+            self.logger.info("ConversationManager: PostgreSQL initialized")
+        except Exception as e:
+            self.logger.error(f"ConversationManager: PostgreSQL init failed: {e}")
+
+    def _create_conversations_table(self) -> None:
+        try:
+            with self.postgres_conn.cursor() as cursor:
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS conversations (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        thread_id VARCHAR(255) NOT NULL UNIQUE,
+                        user_id VARCHAR(255) NOT NULL,
+                        title VARCHAR(500) NOT NULL DEFAULT 'New Conversation',
+                        created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_conversations_user_id
+                        ON conversations(user_id);
+                    CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
+                        ON conversations(updated_at DESC);
+                """)
+                self.postgres_conn.commit()
+        except Exception as e:
+            self.logger.error(f"ConversationManager: table creation failed: {e}")
+            if self.postgres_conn:
+                self.postgres_conn.rollback()
+
+    # ---- CRUD operations ----
+
+    def create_conversation(
+        self, thread_id: str, user_id: str, title: str = "New Conversation"
+    ) -> Optional[dict]:
+        if not self.checkpoint_saver:
+            return None
+        title = title[:500]
+        try:
+            if self.mongo_db is not None:
+                return self._create_mongo(thread_id, user_id, title)
+            elif self.postgres_conn is not None:
+                return self._create_pg(thread_id, user_id, title)
+        except Exception as e:
+            self.logger.error(f"ConversationManager: create failed: {e}")
+        return None
+
+    def _create_mongo(self, thread_id: str, user_id: str, title: str) -> Optional[dict]:
+        now = datetime.now()
+        doc = {
+            "id": uuid.uuid4().hex,
+            "thread_id": thread_id,
+            "user_id": user_id,
+            "title": title,
+            "created_at": now,
+            "updated_at": now,
+        }
+        self.mongo_db.conversations.insert_one(doc)
+        doc.pop("_id", None)
+        return doc
+
+    def _create_pg(self, thread_id: str, user_id: str, title: str) -> Optional[dict]:
+        now = datetime.now()
+        conv_id = uuid.uuid4()
+        with self.postgres_conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO conversations (id, thread_id, user_id, title, created_at, updated_at)
+                   VALUES (%s, %s, %s, %s, %s, %s)
+                   RETURNING id, thread_id, user_id, title, created_at, updated_at""",
+                (conv_id, thread_id, user_id, title, now, now),
+            )
+            row = cur.fetchone()
+            self.postgres_conn.commit()
+            if row:
+                return {
+                    "id": str(row["id"]),
+                    "thread_id": row["thread_id"],
+                    "user_id": row["user_id"],
+                    "title": row["title"],
+                    "created_at": row["created_at"].isoformat(),
+                    "updated_at": row["updated_at"].isoformat(),
+                }
+        return None
+
+    def list_conversations(
+        self, user_id: str, limit: int = 50, offset: int = 0
+    ) -> List[dict]:
+        if not self.checkpoint_saver:
+            return []
+        try:
+            if self.mongo_db is not None:
+                return self._list_mongo(user_id, limit, offset)
+            elif self.postgres_conn is not None:
+                return self._list_pg(user_id, limit, offset)
+        except Exception as e:
+            self.logger.error(f"ConversationManager: list failed: {e}")
+        return []
+
+    def _list_mongo(self, user_id: str, limit: int, offset: int) -> List[dict]:
+        cursor = (
+            self.mongo_db.conversations.find({"user_id": user_id})
+            .sort("updated_at", -1)
+            .skip(offset)
+            .limit(limit)
+        )
+        results = []
+        for doc in cursor:
+            doc.pop("_id", None)
+            # Normalize datetime fields to ISO strings
+            for field in ("created_at", "updated_at"):
+                if isinstance(doc.get(field), datetime):
+                    doc[field] = doc[field].isoformat()
+            results.append(doc)
+        return results
+
+    def _list_pg(self, user_id: str, limit: int, offset: int) -> List[dict]:
+        with self.postgres_conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, thread_id, user_id, title, created_at, updated_at
+                   FROM conversations
+                   WHERE user_id = %s
+                   ORDER BY updated_at DESC
+                   LIMIT %s OFFSET %s""",
+                (user_id, limit, offset),
+            )
+            rows = cur.fetchall()
+            return [
+                {
+                    "id": str(r["id"]),
+                    "thread_id": r["thread_id"],
+                    "user_id": r["user_id"],
+                    "title": r["title"],
+                    "created_at": r["created_at"].isoformat(),
+                    "updated_at": r["updated_at"].isoformat(),
+                }
+                for r in rows
+            ]
+
+    def get_conversation(self, thread_id: str) -> Optional[dict]:
+        if not self.checkpoint_saver:
+            return None
+        try:
+            if self.mongo_db is not None:
+                doc = self.mongo_db.conversations.find_one({"thread_id": thread_id})
+                if doc:
+                    doc.pop("_id", None)
+                    for field in ("created_at", "updated_at"):
+                        if isinstance(doc.get(field), datetime):
+                            doc[field] = doc[field].isoformat()
+                    return doc
+            elif self.postgres_conn is not None:
+                with self.postgres_conn.cursor() as cur:
+                    cur.execute(
+                        """SELECT id, thread_id, user_id, title, created_at, updated_at
+                           FROM conversations WHERE thread_id = %s""",
+                        (thread_id,),
+                    )
+                    r = cur.fetchone()
+                    if r:
+                        return {
+                            "id": str(r["id"]),
+                            "thread_id": r["thread_id"],
+                            "user_id": r["user_id"],
+                            "title": r["title"],
+                            "created_at": r["created_at"].isoformat(),
+                            "updated_at": r["updated_at"].isoformat(),
+                        }
+        except Exception as e:
+            self.logger.error(f"ConversationManager: get failed: {e}")
+        return None
+
+    def update_title(self, thread_id: str, user_id: str, title: str) -> bool:
+        if not self.checkpoint_saver:
+            return False
+        title = title[:500]
+        try:
+            if self.mongo_db is not None:
+                result = self.mongo_db.conversations.update_one(
+                    {"thread_id": thread_id, "user_id": user_id},
+                    {"$set": {"title": title, "updated_at": datetime.now()}},
+                )
+                return result.modified_count > 0
+            elif self.postgres_conn is not None:
+                with self.postgres_conn.cursor() as cur:
+                    cur.execute(
+                        """UPDATE conversations SET title = %s, updated_at = NOW()
+                           WHERE thread_id = %s AND user_id = %s""",
+                        (title, thread_id, user_id),
+                    )
+                    self.postgres_conn.commit()
+                    return cur.rowcount > 0
+        except Exception as e:
+            self.logger.error(f"ConversationManager: update_title failed: {e}")
+            if self.postgres_conn:
+                self.postgres_conn.rollback()
+        return False
+
+    def touch(self, thread_id: str) -> bool:
+        if not self.checkpoint_saver:
+            return False
+        try:
+            if self.mongo_db is not None:
+                result = self.mongo_db.conversations.update_one(
+                    {"thread_id": thread_id},
+                    {"$set": {"updated_at": datetime.now()}},
+                )
+                return result.modified_count > 0
+            elif self.postgres_conn is not None:
+                with self.postgres_conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE conversations SET updated_at = NOW() WHERE thread_id = %s",
+                        (thread_id,),
+                    )
+                    self.postgres_conn.commit()
+                    return cur.rowcount > 0
+        except Exception as e:
+            self.logger.error(f"ConversationManager: touch failed: {e}")
+            if self.postgres_conn:
+                self.postgres_conn.rollback()
+        return False
+
+    def delete_conversation(self, thread_id: str, user_id: str) -> bool:
+        if not self.checkpoint_saver:
+            return False
+        try:
+            if self.mongo_db is not None:
+                result = self.mongo_db.conversations.delete_one(
+                    {"thread_id": thread_id, "user_id": user_id}
+                )
+                if result.deleted_count > 0:
+                    # Also remove associated chat_streams
+                    self.mongo_db.chat_streams.delete_one({"thread_id": thread_id})
+                    return True
+                return False
+            elif self.postgres_conn is not None:
+                with self.postgres_conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM conversations WHERE thread_id = %s AND user_id = %s",
+                        (thread_id, user_id),
+                    )
+                    deleted = cur.rowcount > 0
+                    if deleted:
+                        cur.execute(
+                            "DELETE FROM chat_streams WHERE thread_id = %s",
+                            (thread_id,),
+                        )
+                    self.postgres_conn.commit()
+                    return deleted
+        except Exception as e:
+            self.logger.error(f"ConversationManager: delete failed: {e}")
+            if self.postgres_conn:
+                self.postgres_conn.rollback()
+        return False
+
+
+# Global ConversationManager singleton
+_conversation_manager = ConversationManager(
+    checkpoint_saver=get_bool_env("LANGGRAPH_CHECKPOINT_SAVER", False),
+    db_uri=get_str_env("LANGGRAPH_CHECKPOINT_DB_URL", "mongodb://localhost:27017"),
+)
+
+
+def create_conversation(thread_id: str, user_id: str, title: str = "New Conversation") -> Optional[dict]:
+    return _conversation_manager.create_conversation(thread_id, user_id, title)
+
+
+def list_conversations(user_id: str, limit: int = 50, offset: int = 0) -> List[dict]:
+    return _conversation_manager.list_conversations(user_id, limit, offset)
+
+
+def get_conversation(thread_id: str) -> Optional[dict]:
+    return _conversation_manager.get_conversation(thread_id)
+
+
+def update_conversation_title(thread_id: str, user_id: str, title: str) -> bool:
+    return _conversation_manager.update_title(thread_id, user_id, title)
+
+
+def touch_conversation(thread_id: str) -> bool:
+    return _conversation_manager.touch(thread_id)
+
+
+def delete_conversation(thread_id: str, user_id: str) -> bool:
+    return _conversation_manager.delete_conversation(thread_id, user_id)

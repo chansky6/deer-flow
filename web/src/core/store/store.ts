@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
-import { chatStream, chatStreamReconnect, fetchWorkflowStatus, generatePodcast } from "../api";
+import { chatStream, chatStreamReconnect, fetchConversations, fetchWorkflowStatus, generatePodcast } from "../api";
+import type { Conversation } from "../api/chat";
 import { resolveServiceURL } from "../api/resolve-service-url";
 import type { ChatEvent } from "../api/types";
 import type { Citation, Message, Resource } from "../messages";
@@ -69,6 +70,8 @@ export const useStore = create<{
   researchCitations: Map<string, Citation[]>;
   ongoingResearchId: string | null;
   openResearchId: string | null;
+  conversations: Conversation[];
+  conversationsLoaded: boolean;
 
   appendMessage: (message: Message) => void;
   updateMessage: (message: Message) => void;
@@ -90,6 +93,8 @@ export const useStore = create<{
   researchCitations: new Map<string, Citation[]>(),
   ongoingResearchId: null,
   openResearchId: null,
+  conversations: [],
+  conversationsLoaded: false,
 
   appendMessage(message: Message) {
     set((state) => {
@@ -311,6 +316,8 @@ export async function sendMessage(
     trackEventIndex: true,
   });
   setResponding(false);
+  // Refresh conversation list after message completes
+  loadConversations();
 }
 
 function setResponding(value: boolean) {
@@ -763,11 +770,54 @@ export async function restoreSession(): Promise<boolean> {
  * and reload the page to start fresh.
  */
 export function resetSession() {
+  startNewConversation();
+}
+
+/**
+ * Load conversations from the backend for the current user.
+ */
+export async function loadConversations() {
   try {
-    localStorage.removeItem(THREAD_ID_STORAGE_KEY);
+    const { conversations } = await fetchConversations();
+    useStore.setState({ conversations, conversationsLoaded: true });
+  } catch {
+    // Network error — leave state as-is
+  }
+}
+
+/**
+ * Switch to an existing conversation by thread_id.
+ * Resets message state but preserves the conversations list.
+ */
+export function switchConversation(threadId: string) {
+  THREAD_ID = threadId;
+  try {
+    localStorage.setItem(THREAD_ID_STORAGE_KEY, threadId);
     localStorage.removeItem(EVENT_INDEX_STORAGE_KEY);
   } catch {
     // ignore
   }
-  window.location.reload();
+  // Reset message state, keep conversations list
+  useStore.setState({
+    threadId: threadId,
+    responding: false,
+    messageIds: [],
+    messages: new Map(),
+    researchIds: [],
+    researchPlanIds: new Map(),
+    researchReportIds: new Map(),
+    researchActivityIds: new Map(),
+    researchQueries: new Map(),
+    researchCitations: new Map(),
+    ongoingResearchId: null,
+    openResearchId: null,
+  });
+}
+
+/**
+ * Start a brand new conversation with a fresh thread_id.
+ */
+export function startNewConversation() {
+  const newId = nanoid();
+  switchConversation(newId);
 }
