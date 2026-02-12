@@ -1,6 +1,7 @@
 import { parse } from "best-effort-json-parser";
 
 // Suppress noisy console.error from best-effort-json-parser when extra tokens are found
+// eslint-disable-next-line @typescript-eslint/no-empty-function
 parse.onExtraToken = () => {};
 
 /**

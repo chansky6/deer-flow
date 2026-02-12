@@ -360,17 +360,6 @@ function appendMessage(message: Message) {
   useStore.getState().appendMessage(message);
 }
 
-function updateMessage(message: Message) {
-  if (
-    getOngoingResearchId() &&
-    message.agent === "reporter" &&
-    !message.isStreaming
-  ) {
-    useStore.getState().setOngoingResearch(null);
-  }
-  useStore.getState().updateMessage(message);
-}
-
 function getOngoingResearchId() {
   return useStore.getState().ongoingResearchId;
 }
@@ -747,7 +736,7 @@ export async function restoreSession(): Promise<boolean> {
           }
         }
 
-        let message = getMessage(messageId!);
+        let message = getMessage(messageId);
         if (message) {
           message = mergeMessage(message, chatEvent);
           message.isStreaming = false;
