@@ -60,8 +60,9 @@ class TestStreamGraphEventsCancellation:
 
     @pytest.mark.asyncio
     async def test_cancelled_error_does_not_propagate(self):
-        """When the stream is cancelled, the generator should end gracefully
-        instead of re-raising CancelledError (fixes issue #847)."""
+        """When the stream is cancelled, the generator should yield a
+        cancellation event and then re-raise CancelledError so the
+        WorkflowManager can mark the run properly."""
 
         async def _mock_astream(*args, **kwargs):
             yield ("agent", None, {"some": "data"})
@@ -71,11 +72,12 @@ class TestStreamGraphEventsCancellation:
         graph.astream = _mock_astream
 
         events = []
-        # The generator must NOT raise CancelledError
-        async for event in _stream_graph_events(
-            graph, {"input": "test"}, {}, "test-thread-id"
-        ):
-            events.append(event)
+        # The generator re-raises CancelledError after yielding the cancel event
+        with pytest.raises(asyncio.CancelledError):
+            async for event in _stream_graph_events(
+                graph, {"input": "test"}, {}, "test-thread-id"
+            ):
+                events.append(event)
 
         # It should have yielded a final error event with reason='cancelled'
         final_events_with_cancelled = [
@@ -96,10 +98,11 @@ class TestStreamGraphEventsCancellation:
         graph.astream = _mock_astream
 
         events = []
-        async for event in _stream_graph_events(
-            graph, {"input": "test"}, {}, "test-thread-id"
-        ):
-            events.append(event)
+        with pytest.raises(asyncio.CancelledError):
+            async for event in _stream_graph_events(
+                graph, {"input": "test"}, {}, "test-thread-id"
+            ):
+                events.append(event)
 
         assert len(events) == 1
         assert '"reason": "cancelled"' in events[0]
@@ -652,13 +655,22 @@ class TestRAGEndpoints:
 
 
 class TestChatStreamEndpoint:
+    @patch("src.server.app._workflow_manager")
     @patch("src.server.app.graph")
-    def test_chat_stream_with_default_thread_id(self, mock_graph, client):
+    def test_chat_stream_with_default_thread_id(self, mock_graph, mock_wm, client):
         # Mock the async stream
         async def mock_astream(*args, **kwargs):
             yield ("agent1", "step1", {"test": "data"})
 
         mock_graph.astream = mock_astream
+
+        # Mock workflow manager so the endpoint doesn't return 503
+        mock_wm.get_run.return_value = None
+
+        async def mock_subscribe(thread_id, from_index=0):
+            yield 'event: message_chunk\ndata: {"test": "data"}\n\n'
+
+        mock_wm.subscribe = mock_subscribe
 
         request_data = {
             "thread_id": "__default__",
@@ -720,17 +732,26 @@ class TestChatStreamEndpoint:
             == "MCP server configuration is disabled. Set ENABLE_MCP_SERVER_CONFIGURATION=true to enable MCP features."
         )
 
+    @patch("src.server.app._workflow_manager")
     @patch("src.server.app.graph")
     @patch.dict(
         os.environ,
         {"ENABLE_MCP_SERVER_CONFIGURATION": "true"},
     )
-    def test_chat_stream_with_mcp_settings_enabled(self, mock_graph, client):
+    def test_chat_stream_with_mcp_settings_enabled(self, mock_graph, mock_wm, client):
         # Mock the async stream
         async def mock_astream(*args, **kwargs):
             yield ("agent1", "step1", {"test": "data"})
 
         mock_graph.astream = mock_astream
+
+        # Mock workflow manager so the endpoint doesn't return 503
+        mock_wm.get_run.return_value = None
+
+        async def mock_subscribe(thread_id, from_index=0):
+            yield 'event: message_chunk\ndata: {"test": "data"}\n\n'
+
+        mock_wm.subscribe = mock_subscribe
 
         request_data = {
             "thread_id": "__default__",

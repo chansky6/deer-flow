@@ -161,10 +161,12 @@ def test_persist_postgresql_called_with_aggregated_chunks():
 
 
 def test_persist_not_attempted_when_saver_disabled():
-    """When saver disabled, stop should not persist and should return False."""
+    """When saver disabled, stop should still buffer in memory and return True,
+    but the DB persist (_append_single_message) is a no-op."""
     manager = checkpoint.ChatStreamManager(checkpoint_saver=False)
-    # stop should try to persist, but saver disabled => returns False
-    assert manager.process_stream_message("t4", "hello", finish_reason="stop") is False
+    # process_stream_message always stores in memory and returns True;
+    # the actual DB persist is skipped internally when saver is disabled.
+    assert manager.process_stream_message("t4", "hello", finish_reason="stop") is True
 
 
 def test_persist_mongodb_local_db():
