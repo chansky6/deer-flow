@@ -317,7 +317,7 @@ export async function sendMessage(
   });
   setResponding(false);
   // Refresh conversation list after message completes
-  loadConversations();
+  void loadConversations();
 }
 
 function setResponding(value: boolean) {

@@ -34,7 +34,7 @@ export function ConversationSidebar() {
 
   useEffect(() => {
     if (!conversationsLoaded) {
-      loadConversations();
+      void loadConversations();
     }
   }, [conversationsLoaded]);
 

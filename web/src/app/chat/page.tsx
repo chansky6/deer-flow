@@ -18,6 +18,7 @@ import { Tooltip } from "../../components/deer-flow/tooltip";
 import { useConfig } from "../../core/api/hooks";
 import { resolveServiceURL } from "../../core/api/resolve-service-url";
 import { SettingsDialog } from "../settings/dialogs/settings-dialog";
+
 import { ConversationSidebar } from "./components/conversation-sidebar";
 
 const Main = dynamic(() => import("./main"), {
