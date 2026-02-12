@@ -6,14 +6,55 @@ import { toast } from "sonner";
 import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 
-import { chatStream, generatePodcast } from "../api";
+import { chatStream, chatStreamReconnect, fetchWorkflowStatus, generatePodcast } from "../api";
+import { resolveServiceURL } from "../api/resolve-service-url";
+import type { ChatEvent } from "../api/types";
 import type { Citation, Message, Resource } from "../messages";
 import { mergeMessage } from "../messages";
 import { parseJSON } from "../utils";
 
 import { getChatStreamSettings } from "./settings-store";
 
-const THREAD_ID = nanoid();
+const THREAD_ID_STORAGE_KEY = "deerflow.thread_id";
+
+function getOrCreateThreadId(): string {
+  if (typeof window === "undefined") return nanoid();
+  try {
+    const stored = localStorage.getItem(THREAD_ID_STORAGE_KEY);
+    if (stored) return stored;
+  } catch {
+    // localStorage unavailable
+  }
+  const id = nanoid();
+  try {
+    localStorage.setItem(THREAD_ID_STORAGE_KEY, id);
+  } catch {
+    // localStorage unavailable
+  }
+  return id;
+}
+
+let THREAD_ID = getOrCreateThreadId();
+
+const EVENT_INDEX_STORAGE_KEY = "deerflow.event_index";
+
+function getStoredEventIndex(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const stored = localStorage.getItem(EVENT_INDEX_STORAGE_KEY);
+    return stored ? parseInt(stored, 10) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setStoredEventIndex(index: number) {
+  try {
+    localStorage.setItem(EVENT_INDEX_STORAGE_KEY, String(index));
+  } catch {
+    // localStorage unavailable
+  }
+}
 
 export const useStore = create<{
   responding: boolean;
@@ -90,6 +131,111 @@ export const useStore = create<{
   },
 }));
 
+/**
+ * Shared event processing logic used by both sendMessage and reconnection.
+ * Processes a stream of ChatEvents, updating the store as events arrive.
+ */
+async function processEventStream(
+  stream: AsyncIterable<ChatEvent>,
+  opts: { interruptFeedback?: string; trackEventIndex?: boolean } = {},
+) {
+  let messageId: string | undefined;
+  const pendingUpdates = new Map<string, Message>();
+  let updateTimer: NodeJS.Timeout | undefined;
+  let eventIndex = opts.trackEventIndex ? getStoredEventIndex() : 0;
+
+  const scheduleUpdate = () => {
+    if (updateTimer) clearTimeout(updateTimer);
+    updateTimer = setTimeout(() => {
+      if (pendingUpdates.size > 0) {
+        useStore.getState().updateMessages(Array.from(pendingUpdates.values()));
+        pendingUpdates.clear();
+      }
+    }, 16); // ~60fps
+  };
+
+  try {
+    for await (const event of stream) {
+      const { type, data } = event;
+      let message: Message | undefined;
+
+      if (opts.trackEventIndex) {
+        eventIndex++;
+        setStoredEventIndex(eventIndex);
+      }
+
+      if (type === "error") {
+        if (data.reason !== "cancelled") {
+          toast(data.error || "An error occurred while generating the response.");
+        }
+        break;
+      }
+      if (type === "citations") {
+        const ongoingResearchId = useStore.getState().ongoingResearchId;
+        if (ongoingResearchId && data.citations) {
+          useStore.getState().setCitations(ongoingResearchId, data.citations);
+        }
+        continue;
+      }
+
+      if (type === "tool_call_result") {
+        message = findMessageByToolCallId(data.tool_call_id);
+        if (message) {
+          messageId = message.id;
+        } else {
+          if (process.env.NODE_ENV === "development") {
+            console.warn(`Tool call result without matching message: ${data.tool_call_id}`);
+          }
+          continue;
+        }
+      } else {
+        messageId = data.id;
+
+        if (!existsMessage(messageId)) {
+          message = {
+            id: messageId,
+            threadId: data.thread_id,
+            agent: data.agent,
+            role: data.role,
+            content: "",
+            contentChunks: [],
+            reasoningContent: "",
+            reasoningContentChunks: [],
+            isStreaming: true,
+            interruptFeedback: opts.interruptFeedback,
+          };
+          appendMessage(message);
+        }
+      }
+
+      message ??= getMessage(messageId);
+      if (message) {
+        message = mergeMessage(message, event);
+        pendingUpdates.set(message.id, message);
+        scheduleUpdate();
+      }
+    }
+  } catch (error) {
+    const isAborted = (error as Error).name === "AbortError";
+    if (!isAborted) {
+      toast("An error occurred while generating the response. Please try again.");
+    }
+    if (messageId != null) {
+      const message = getMessage(messageId);
+      if (message?.isStreaming) {
+        message.isStreaming = false;
+        useStore.getState().updateMessage(message);
+      }
+    }
+    useStore.getState().setOngoingResearch(null);
+  } finally {
+    if (updateTimer) clearTimeout(updateTimer);
+    if (pendingUpdates.size > 0) {
+      useStore.getState().updateMessages(Array.from(pendingUpdates.values()));
+    }
+  }
+}
+
 export async function sendMessage(
   content?: string,
   {
@@ -110,6 +256,28 @@ export async function sendMessage(
       contentChunks: [content],
       resources,
     });
+  }
+
+  // Check if there's already a running workflow we should reconnect to
+  try {
+    const status = await fetchWorkflowStatus(THREAD_ID);
+    if (status.status === "running") {
+      setResponding(true);
+      // If store is empty (e.g. page was refreshed), replay from 0;
+      // otherwise resume from where we left off.
+      const hasMessages = useStore.getState().messageIds.length > 0;
+      const fromIndex = hasMessages ? getStoredEventIndex() : 0;
+      if (!hasMessages) setStoredEventIndex(0);
+      const reconnectStream = chatStreamReconnect(THREAD_ID, fromIndex, options);
+      await processEventStream(reconnectStream, {
+        interruptFeedback,
+        trackEventIndex: true,
+      });
+      setResponding(false);
+      return;
+    }
+  } catch {
+    // Status check failed, proceed with new stream
   }
 
   const settings = getChatStreamSettings();
@@ -135,108 +303,14 @@ export async function sendMessage(
     options,
   );
 
+  // Reset event index for new workflow
+  setStoredEventIndex(0);
   setResponding(true);
-  let messageId: string | undefined;
-  const pendingUpdates = new Map<string, Message>();
-  let updateTimer: NodeJS.Timeout | undefined;
-
-  const scheduleUpdate = () => {
-    if (updateTimer) clearTimeout(updateTimer);
-    updateTimer = setTimeout(() => {
-      // Batch update message status
-      if (pendingUpdates.size > 0) {
-        useStore.getState().updateMessages(Array.from(pendingUpdates.values()));
-        pendingUpdates.clear();
-      }
-    }, 16); // ~60fps
-  };
-
-  try {
-    for await (const event of stream) {
-      const { type, data } = event;
-      let message: Message | undefined;
-
-      if (type === "error") {
-        // Server sent an error event - check if it's user cancellation
-        if (data.reason !== "cancelled") {
-          toast(data.error || "An error occurred while generating the response.");
-        }
-        break;
-      }
-      // Handle citations event: store citations for the current research
-      if (type === "citations") {
-        const ongoingResearchId = useStore.getState().ongoingResearchId;
-        if (ongoingResearchId && data.citations) {
-          useStore.getState().setCitations(ongoingResearchId, data.citations);
-        }
-        continue;
-      }
-      
-      // Handle tool_call_result specially: use the message that contains the tool call
-      if (type === "tool_call_result") {
-        message = findMessageByToolCallId(data.tool_call_id);
-        if (message) {
-          // Use the found message's ID, not data.id
-          messageId = message.id;
-        } else {
-          // Shouldn't happen, but handle gracefully
-          if (process.env.NODE_ENV === "development") {
-            console.warn(`Tool call result without matching message: ${data.tool_call_id}`);
-          }
-          continue; // Skip this event
-        }
-      } else {
-        // For other event types, use data.id
-        messageId = data.id;
-        
-        if (!existsMessage(messageId)) {
-          message = {
-            id: messageId,
-            threadId: data.thread_id,
-            agent: data.agent,
-            role: data.role,
-            content: "",
-            contentChunks: [],
-            reasoningContent: "",
-            reasoningContentChunks: [],
-            isStreaming: true,
-            interruptFeedback,
-          };
-          appendMessage(message);
-        }
-      }
-      
-      message ??= getMessage(messageId);
-      if (message) {
-        message = mergeMessage(message, event);
-        // Collect pending messages for update, instead of updating immediately.
-        pendingUpdates.set(message.id, message);
-        scheduleUpdate();
-      }
-    }
-  } catch (error) {
-    const isAborted = (error as Error).name === "AbortError";
-    if (!isAborted) {
-      toast("An error occurred while generating the response. Please try again.");
-    }
-    // Update message status.
-    if (messageId != null) {
-      const message = getMessage(messageId);
-      if (message?.isStreaming) {
-        message.isStreaming = false;
-        useStore.getState().updateMessage(message);
-      }
-    }
-    useStore.getState().setOngoingResearch(null);
-  } finally {
-    setResponding(false);
-    // Ensure all pending updates are processed.
-    if (updateTimer) clearTimeout(updateTimer);
-    if (pendingUpdates.size > 0) {
-      useStore.getState().updateMessages(Array.from(pendingUpdates.values()));
-    }
-
-  }
+  await processEventStream(stream, {
+    interruptFeedback,
+    trackEventIndex: true,
+  });
+  setResponding(false);
 }
 
 function setResponding(value: boolean) {
@@ -533,4 +607,167 @@ export function useCitations(researchId: string | null | undefined) {
 
 export function getCitations(researchId: string): Citation[] {
   return useStore.getState().researchCitations.get(researchId) ?? [];
+}
+
+/**
+ * Restore a previous session. First checks if a workflow is still running
+ * on the backend (e.g. user refreshed mid-research). If so, reconnects to
+ * the live SSE stream. Otherwise falls back to replaying persisted history.
+ *
+ * Returns true if a session was restored, false otherwise.
+ */
+export async function restoreSession(): Promise<boolean> {
+  // Nothing to restore if no persisted thread_id
+  if (typeof window === "undefined") return false;
+  let storedId: string | null = null;
+  try {
+    storedId = localStorage.getItem(THREAD_ID_STORAGE_KEY);
+  } catch {
+    return false;
+  }
+  if (!storedId) return false;
+
+  // 1. Check if the backend still has a running workflow for this thread
+  try {
+    const status = await fetchWorkflowStatus(storedId);
+    if (status.status === "running") {
+      // Page was refreshed — store is empty, so replay ALL events from index 0
+      // to rebuild the full message state, then continue streaming live events.
+      setResponding(true);
+      setStoredEventIndex(0);
+      const reconnectStream = chatStreamReconnect(storedId, 0);
+      await processEventStream(reconnectStream, { trackEventIndex: true });
+      setResponding(false);
+      return useStore.getState().messageIds.length > 0;
+    }
+    if (status.status === "completed" || status.status === "error") {
+      // Workflow finished but events are still in memory — replay them all.
+      // This is faster than waiting for the history endpoint (which depends
+      // on checkpoint persistence).
+      setStoredEventIndex(0);
+      const replayStream = chatStreamReconnect(storedId, 0);
+      await processEventStream(replayStream, { trackEventIndex: true });
+      if (useStore.getState().messageIds.length > 0) {
+        return true;
+      }
+      // If replay yielded nothing (e.g. run was cleaned up), fall through
+      // to the history endpoint below.
+    }
+  } catch {
+    // Status check failed — fall through to history restore
+  }
+
+  // 2. Workflow not running — restore from persisted history
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(
+      resolveServiceURL(`chat/history/${encodeURIComponent(storedId)}`),
+      { signal: controller.signal, credentials: "include" },
+    );
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return false;
+
+    const data = (await res.json()) as {
+      thread_id: string;
+      messages: string[];
+      available: boolean;
+    };
+
+    if (!data.available || !data.messages || data.messages.length === 0) {
+      return false;
+    }
+
+    // Replay each SSE event string through the same merge logic used during
+    // live streaming. The format is "event: {type}\ndata: {json}\n\n".
+    for (const raw of data.messages) {
+      try {
+        const normalized = raw.replace(/\r\n/g, "\n").trim();
+        const lines = normalized.split("\n");
+        if (lines.length < 2) continue;
+
+        const eventLine = lines[0]!;
+        const dataLine = lines.slice(1).join("\n");
+
+        const eventType = eventLine.replace(/^event:\s*/, "");
+        const jsonStr = dataLine.replace(/^data:\s*/, "");
+
+        const eventData = JSON.parse(jsonStr);
+        const chatEvent = { type: eventType, data: eventData } as ChatEvent;
+
+        // Skip error events during restoration
+        if (chatEvent.type === "error") continue;
+
+        // Handle citations
+        if (chatEvent.type === "citations") {
+          const ongoingResearchId = useStore.getState().ongoingResearchId;
+          if (ongoingResearchId && chatEvent.data.citations) {
+            useStore
+              .getState()
+              .setCitations(ongoingResearchId, chatEvent.data.citations);
+          }
+          continue;
+        }
+
+        // Handle tool_call_result: find the message that owns this tool call
+        let messageId: string | undefined;
+        if (chatEvent.type === "tool_call_result") {
+          const ownerMessage = findMessageByToolCallId(
+            chatEvent.data.tool_call_id,
+          );
+          if (ownerMessage) {
+            messageId = ownerMessage.id;
+          } else {
+            continue;
+          }
+        } else {
+          messageId = chatEvent.data.id;
+          if (!existsMessage(messageId)) {
+            const msg: Message = {
+              id: messageId,
+              threadId: chatEvent.data.thread_id,
+              agent: chatEvent.data.agent,
+              role: chatEvent.data.role,
+              content: "",
+              contentChunks: [],
+              reasoningContent: "",
+              reasoningContentChunks: [],
+              isStreaming: false,
+            };
+            appendMessage(msg);
+          }
+        }
+
+        let message = getMessage(messageId!);
+        if (message) {
+          message = mergeMessage(message, chatEvent);
+          message.isStreaming = false;
+          useStore.getState().updateMessage(message);
+        }
+      } catch {
+        // Skip malformed events
+      }
+    }
+
+    return useStore.getState().messageIds.length > 0;
+  } catch {
+    // Network error or timeout — degrade gracefully
+    return false;
+  }
+}
+
+/**
+ * Reset the current session: generate a new thread_id, clear localStorage,
+ * and reload the page to start fresh.
+ */
+export function resetSession() {
+  try {
+    localStorage.removeItem(THREAD_ID_STORAGE_KEY);
+    localStorage.removeItem(EVENT_INDEX_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+  window.location.reload();
 }

@@ -30,3 +30,9 @@ coverage/
 
 # Temporary PPT content files
 ppt_content_*.md
+
+# Local database data
+data/
+
+# Local deploy yml
+*.deploy.yml

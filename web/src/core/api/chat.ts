@@ -224,3 +224,92 @@ let fastForwardReplaying = false;
 export function fastForwardReplay(value: boolean) {
   fastForwardReplaying = value;
 }
+
+// --- Workflow status & reconnection APIs ---
+
+export interface WorkflowStatus {
+  thread_id: string;
+  status: "running" | "completed" | "error" | "not_found";
+  event_count: number;
+}
+
+export async function fetchWorkflowStatus(
+  threadId: string,
+): Promise<WorkflowStatus> {
+  const res = await fetch(
+    resolveServiceURL(`chat/status/${encodeURIComponent(threadId)}`),
+    { method: "GET", credentials: "include" },
+  );
+  if (!res.ok) {
+    return { thread_id: threadId, status: "not_found", event_count: 0 };
+  }
+  return (await res.json()) as WorkflowStatus;
+}
+
+export async function* chatStreamReconnect(
+  threadId: string,
+  lastEventIndex: number,
+  options: { abortSignal?: AbortSignal } = {},
+): AsyncIterable<ChatEvent> {
+  const url = resolveServiceURL(
+    `chat/stream/${encodeURIComponent(threadId)}?last_event_index=${lastEventIndex}`,
+  );
+  const response = await fetch(url, {
+    method: "GET",
+    headers: { "Cache-Control": "no-cache" },
+    credentials: "include",
+    signal: options.abortSignal,
+  });
+  if (!response.ok || !response.body) {
+    return;
+  }
+
+  const reader = response.body
+    .pipeThrough(new TextDecoderStream())
+    .getReader();
+
+  try {
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        if (buffer.trim()) {
+          const event = parseSSEEvent(buffer.trim());
+          if (event) yield event;
+        }
+        break;
+      }
+      buffer += value;
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        if (chunk.trim()) {
+          const event = parseSSEEvent(chunk.trim());
+          if (event) yield event;
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function parseSSEEvent(chunk: string): ChatEvent | undefined {
+  let eventType = "message";
+  let data: string | null = null;
+  for (const line of chunk.split("\n")) {
+    const pos = line.indexOf(": ");
+    if (pos === -1) continue;
+    const key = line.slice(0, pos);
+    const value = line.slice(pos + 2);
+    if (key === "event") eventType = value;
+    else if (key === "data") data = value;
+  }
+  if (!data) return undefined;
+  try {
+    return { type: eventType, data: JSON.parse(data) } as ChatEvent;
+  } catch {
+    return undefined;
+  }
+}

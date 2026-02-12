@@ -1,5 +1,8 @@
 import { parse } from "best-effort-json-parser";
 
+// Suppress noisy console.error from best-effort-json-parser when extra tokens are found
+parse.onExtraToken = () => {};
+
 /**
  * Extract valid JSON from content that may have extra tokens.
  * Finds the last closing brace/bracket that could be valid JSON.

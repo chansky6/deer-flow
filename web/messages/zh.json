@@ -198,7 +198,8 @@
       "fastForward": "快进",
       "demoNotice": "* 此网站仅用于演示目的。如果您想尝试自己的问题，请",
       "clickHere": "点击这里",
-      "cloneLocally": "在本地克隆并运行它。"
+      "cloneLocally": "在本地克隆并运行它。",
+      "newConversation": "新对话"
     },
     "multiAgent": {
       "moveToPrevious": "移动到上一步",
@@ -206,6 +207,12 @@
       "moveToNext": "移动到下一步",
       "toggleFullscreen": "切换全屏"
     }
+  },
+  "auth": {
+    "loginRequired": "请登录以继续",
+    "loginWithProvider": "使用 Linux.do 登录",
+    "logout": "退出登录",
+    "loading": "正在检查认证..."
   },
   "landing": {
     "caseStudies": {

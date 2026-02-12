@@ -3,17 +3,20 @@
 
 "use client";
 
-import { GithubOutlined } from "@ant-design/icons";
+import { GithubOutlined, LogoutOutlined } from "@ant-design/icons";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Suspense } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 
 import { Logo } from "../../components/deer-flow/logo";
 import { ThemeToggle } from "../../components/deer-flow/theme-toggle";
 import { Tooltip } from "../../components/deer-flow/tooltip";
+import { useConfig } from "../../core/api/hooks";
+import { resolveServiceURL } from "../../core/api/resolve-service-url";
 import { SettingsDialog } from "../settings/dialogs/settings-dialog";
 
 const Main = dynamic(() => import("./main"), {
@@ -25,14 +28,66 @@ const Main = dynamic(() => import("./main"), {
   ),
 });
 
+interface AuthUser {
+  id: string;
+  username: string;
+  avatar_url: string;
+}
+
 export default function HomePage() {
   const t = useTranslations("chat.page");
+  const tAuth = useTranslations("auth");
+  const router = useRouter();
+  const { config, loading: configLoading } = useConfig();
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    if (configLoading) return;
+    if (!config.auth.enabled) {
+      setAuthChecked(true);
+      return;
+    }
+    fetch(resolveServiceURL("auth/me"), { credentials: "include" })
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error("Not authenticated");
+      })
+      .then((data: AuthUser) => {
+        setUser(data);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        router.push("/login");
+      });
+  }, [config.auth.enabled, configLoading, router]);
+
+  const handleLogout = useCallback(async () => {
+    await fetch(resolveServiceURL("auth/logout"), {
+      method: "POST",
+      credentials: "include",
+    });
+    router.push("/login");
+  }, [router]);
+
+  if (configLoading || (!authChecked && config.auth.enabled)) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center">
+        {tAuth("loading")}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen justify-center overscroll-none">
       <header className="fixed top-0 left-0 flex h-12 w-full items-center justify-between px-4">
         <Logo />
-        <div className="flex items-center">
+        <div className="flex items-center gap-1">
+          {user && (
+            <span className="text-muted-foreground mr-1 text-sm">
+              {user.username}
+            </span>
+          )}
           <Tooltip title={t("starOnGitHub")}>
             <Button variant="ghost" size="icon" asChild>
               <Link
@@ -47,6 +102,13 @@ export default function HomePage() {
           <Suspense>
             <SettingsDialog />
           </Suspense>
+          {user && (
+            <Tooltip title={tAuth("logout")}>
+              <Button variant="ghost" size="icon" onClick={handleLogout}>
+                <LogoutOutlined />
+              </Button>
+            </Tooltip>
+          )}
         </div>
       </header>
       <Main />

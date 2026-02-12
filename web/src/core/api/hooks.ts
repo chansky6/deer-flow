@@ -47,6 +47,7 @@ export function useReplayMetadata() {
 const DEFAULT_CONFIG: DeerFlowConfig = {
   rag: { provider: "" },
   models: { basic: [], reasoning: [] },
+  auth: { enabled: false },
 };
 
 export function useConfig(): {
@@ -70,6 +71,7 @@ export function useConfig(): {
         try {
           const res = await fetch(resolveServiceURL("./config"), {
             signal: AbortSignal.timeout(5000), // 5 second timeout
+            credentials: "include",
           });
 
           if (!res.ok) {

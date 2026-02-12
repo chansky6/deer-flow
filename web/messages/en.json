@@ -198,7 +198,8 @@
       "fastForward": "Fast Forward",
       "demoNotice": "* This site is for demo purposes only. If you want to try your own question, please",
       "clickHere": "click here",
-      "cloneLocally": "to clone it locally and run it."
+      "cloneLocally": "to clone it locally and run it.",
+      "newConversation": "New Conversation"
     },
     "multiAgent": {
       "moveToPrevious": "Move to the previous step",
@@ -206,6 +207,12 @@
       "moveToNext": "Move to the next step",
       "toggleFullscreen": "Toggle fullscreen"
     }
+  },
+  "auth": {
+    "loginRequired": "Please log in to continue",
+    "loginWithProvider": "Login with Linux.do",
+    "logout": "Logout",
+    "loading": "Checking authentication..."
   },
   "landing": {
     "caseStudies": {

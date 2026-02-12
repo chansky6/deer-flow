@@ -123,9 +123,9 @@ class ChatStreamManager:
         """
         Process and store a chat stream message chunk.
 
-        This method handles individual message chunks during streaming and consolidates
-        them into a complete message when the stream finishes. Messages are stored
-        temporarily in memory and permanently in MongoDB when complete.
+        Every event is immediately persisted to the database so that sessions
+        can be restored even after a server restart or mid-workflow crash.
+        The in-memory store is kept as a secondary cache for fast access.
 
         Args:
             thread_id: Unique identifier for the conversation thread
@@ -159,14 +159,24 @@ class ChatStreamManager:
                 current_index = int(cursor.value.get("index", 0)) + 1
                 self.store.put(store_namespace, "cursor", {"index": current_index})
 
-            # Store the current message chunk
+            # Store the current message chunk in memory
             self.store.put(store_namespace, f"chunk_{current_index}", message)
 
-            # Check if conversation is complete and should be persisted
+            # Persist every event to the database immediately
+            self._append_single_message(thread_id, message)
+
+            # On completion, clean up the in-memory store
             if finish_reason in ("stop", "interrupt"):
-                return self._persist_complete_conversation(
-                    thread_id, store_namespace, current_index
-                )
+                try:
+                    memories = self.store.search(
+                        store_namespace, limit=current_index + 2
+                    )
+                    for item in memories:
+                        self.store.delete(store_namespace, item.key)
+                except Exception as e:
+                    self.logger.error(
+                        f"Error cleaning up memory store for thread {thread_id}: {e}"
+                    )
 
             return True
 
@@ -174,6 +184,76 @@ class ChatStreamManager:
             self.logger.error(
                 f"Error processing stream message for thread {thread_id}: {e}"
             )
+            return False
+
+    def _append_single_message(self, thread_id: str, message: str) -> bool:
+        """
+        Append a single SSE event to the database immediately.
+
+        Uses upsert semantics: creates the document/row if it doesn't exist,
+        otherwise appends to the messages array.
+        """
+        if not self.checkpoint_saver:
+            return False
+
+        try:
+            if self.mongo_db is not None:
+                return self._append_single_to_mongodb(thread_id, message)
+            elif self.postgres_conn is not None:
+                return self._append_single_to_postgresql(thread_id, message)
+            else:
+                return False
+        except Exception as e:
+            self.logger.error(
+                f"Error appending message to DB for thread {thread_id}: {e}"
+            )
+            return False
+
+    def _append_single_to_mongodb(self, thread_id: str, message: str) -> bool:
+        """Append a single message to MongoDB using upsert."""
+        try:
+            collection = self.mongo_db.chat_streams
+            result = collection.update_one(
+                {"thread_id": thread_id},
+                {
+                    "$push": {"messages": message},
+                    "$set": {"ts": datetime.now()},
+                    "$setOnInsert": {"id": uuid.uuid4().hex},
+                },
+                upsert=True,
+            )
+            return result.acknowledged
+        except Exception as e:
+            self.logger.error(f"Error appending to MongoDB: {e}")
+            return False
+
+    def _append_single_to_postgresql(self, thread_id: str, message: str) -> bool:
+        """Append a single message to PostgreSQL using upsert."""
+        try:
+            with self.postgres_conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO chat_streams (id, thread_id, messages, ts)
+                    VALUES (%s, %s, %s::jsonb, %s)
+                    ON CONFLICT (thread_id) DO UPDATE
+                    SET messages = chat_streams.messages || %s::jsonb,
+                        ts = %s
+                    """,
+                    (
+                        uuid.uuid4(),
+                        thread_id,
+                        json.dumps([message]),
+                        datetime.now(),
+                        json.dumps([message]),
+                        datetime.now(),
+                    ),
+                )
+                self.postgres_conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            self.logger.error(f"Error appending to PostgreSQL: {e}")
+            if self.postgres_conn:
+                self.postgres_conn.rollback()
             return False
 
     def _persist_complete_conversation(
@@ -339,6 +419,107 @@ class ChatStreamManager:
                 self.postgres_conn.rollback()
             return False
 
+    def get_conversation_history(self, thread_id: str) -> List[str]:
+        """
+        Retrieve stored SSE events for a given thread_id.
+
+        Args:
+            thread_id: Unique identifier for the conversation thread
+
+        Returns:
+            List of SSE event strings (format: "event: {type}\ndata: {json}\n\n")
+        """
+        if not thread_id or not isinstance(thread_id, str):
+            self.logger.warning("Invalid thread_id provided for history retrieval")
+            return []
+
+        if not self.checkpoint_saver:
+            self.logger.debug("Checkpoint saver is disabled, no history available")
+            return []
+
+        try:
+            if self.mongo_db is not None:
+                return self._retrieve_from_mongodb(thread_id)
+            elif self.postgres_conn is not None:
+                return self._retrieve_from_postgresql(thread_id)
+            else:
+                self.logger.warning("No database connection available for history retrieval")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error retrieving conversation history for thread {thread_id}: {e}")
+            return []
+
+    def _retrieve_from_postgresql(self, thread_id: str) -> List[str]:
+        """Retrieve conversation history from PostgreSQL."""
+        try:
+            with self.postgres_conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT messages FROM chat_streams WHERE thread_id = %s",
+                    (thread_id,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return []
+                messages = row.get("messages", []) if isinstance(row, dict) else row[0]
+                if isinstance(messages, str):
+                    messages = json.loads(messages)
+                return messages if isinstance(messages, list) else []
+        except Exception as e:
+            self.logger.error(f"Error retrieving from PostgreSQL: {e}")
+            return []
+
+    def _retrieve_from_mongodb(self, thread_id: str) -> List[str]:
+        """Retrieve conversation history from MongoDB."""
+        try:
+            collection = self.mongo_db.chat_streams
+            document = collection.find_one({"thread_id": thread_id})
+            if document is None:
+                return []
+            messages = document.get("messages", [])
+            return messages if isinstance(messages, list) else []
+        except Exception as e:
+            self.logger.error(f"Error retrieving from MongoDB: {e}")
+            return []
+
+    def force_persist(self, thread_id: str) -> bool:
+        """
+        Force persist all in-memory chunks for a thread_id to the database,
+        regardless of finish_reason. Used when a background workflow completes
+        so events are saved even if the client disconnected mid-stream.
+
+        Args:
+            thread_id: Unique identifier for the conversation thread
+
+        Returns:
+            bool: True if persistence was successful, False otherwise
+        """
+        if not thread_id or not isinstance(thread_id, str):
+            self.logger.warning("Invalid thread_id provided for force_persist")
+            return False
+
+        if not self.checkpoint_saver:
+            self.logger.debug("Checkpoint saver is disabled, skipping force_persist")
+            return False
+
+        try:
+            store_namespace = ("messages", thread_id)
+            cursor = self.store.get(store_namespace, "cursor")
+            if cursor is None:
+                self.logger.debug(
+                    f"No in-memory chunks found for thread {thread_id}"
+                )
+                return False
+
+            final_index = int(cursor.value.get("index", 0))
+            return self._persist_complete_conversation(
+                thread_id, store_namespace, final_index
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Error in force_persist for thread {thread_id}: {e}"
+            )
+            return False
+
     def close(self) -> None:
         """Close database connections."""
         try:
@@ -391,3 +572,39 @@ def chat_stream_message(thread_id: str, message: str, finish_reason: str) -> boo
         )
     else:
         return False
+
+
+def force_persist_conversation(thread_id: str) -> bool:
+    """
+    Force persist all in-memory chunks for a thread_id to the database.
+    Called by WorkflowManager when a background workflow completes.
+
+    Args:
+        thread_id: Unique identifier for the conversation thread
+
+    Returns:
+        bool: True if persistence was successful
+    """
+    return _default_manager.force_persist(thread_id)
+
+
+def get_chat_stream_history(thread_id: str) -> dict:
+    """
+    Retrieve chat stream history for a given thread_id.
+
+    Args:
+        thread_id: Unique identifier for the conversation thread
+
+    Returns:
+        dict with keys: thread_id, messages (list of SSE event strings), available (bool)
+    """
+    checkpoint_saver = get_bool_env("LANGGRAPH_CHECKPOINT_SAVER", False)
+    if not checkpoint_saver:
+        return {"thread_id": thread_id, "messages": [], "available": False}
+
+    messages = _default_manager.get_conversation_history(thread_id)
+    return {
+        "thread_id": thread_id,
+        "messages": messages,
+        "available": True,
+    }

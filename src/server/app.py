@@ -22,7 +22,7 @@ if _debug_mode:
     logging.getLogger("langchain").setLevel(logging.DEBUG)
     logging.getLogger("langgraph").setLevel(logging.DEBUG)
 
-from fastapi import FastAPI, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from langchain_core.messages import AIMessageChunk, BaseMessage, ToolMessage
@@ -39,7 +39,8 @@ from src.config.report_style import ReportStyle
 from src.config.tools import SELECTED_RAG_PROVIDER
 from src.citations import merge_citations
 from src.graph.builder import build_graph_with_memory
-from src.graph.checkpoint import chat_stream_message
+from src.graph.checkpoint import chat_stream_message, get_chat_stream_history
+from src.server.workflow_manager import WorkflowManager
 from src.graph.utils import (
     build_clarified_topic_from_history,
     reconstruct_clarification_history,
@@ -63,7 +64,8 @@ from src.server.chat_request import (
     TTSRequest,
 )
 from src.server.eval_request import EvaluateReportRequest, EvaluateReportResponse
-from src.server.config_request import ConfigResponse
+from src.server.auth import auth_router, is_auth_enabled, require_auth
+from src.server.config_request import AuthConfigResponse, ConfigResponse
 from src.server.mcp_request import MCPServerMetadataRequest, MCPServerMetadataResponse
 from src.server.mcp_utils import load_mcp_tools
 from src.server.rag_request import (
@@ -98,6 +100,9 @@ _pg_checkpointer: Optional[AsyncPostgresSaver] = None
 _mongo_client: Optional[Any] = None
 _mongo_checkpointer: Optional[AsyncMongoDBSaver] = None
 
+# Global workflow manager (initialized at startup)
+_workflow_manager: Optional[WorkflowManager] = None
+
 
 from contextlib import asynccontextmanager
 
@@ -109,7 +114,7 @@ async def lifespan(app):
     - Startup: Register asyncio exception handler and initialize global connection pools
     - Shutdown: Clean up global connection pools
     """
-    global _pg_pool, _pg_checkpointer, _mongo_client, _mongo_checkpointer
+    global _pg_pool, _pg_checkpointer, _mongo_client, _mongo_checkpointer, _workflow_manager
 
     # ========== STARTUP ==========
     try:
@@ -197,10 +202,22 @@ async def lifespan(app):
                 logger.error(f"Failed to initialize MongoDB connection pool: {e}")
                 raise RuntimeError(f"MongoDB checkpoint persistence is configured but could not be initialized: {e}")
 
+    # Initialize workflow manager
+    _workflow_manager = WorkflowManager()
+    _workflow_manager.start_cleanup_loop()
+    logger.info("WorkflowManager initialized")
+
     # ========== YIELD - Application runs here ==========
     yield
 
     # ========== SHUTDOWN ==========
+    # Cancel all running workflows and force persist
+    if _workflow_manager:
+        if _workflow_manager._cleanup_task and not _workflow_manager._cleanup_task.done():
+            _workflow_manager._cleanup_task.cancel()
+        logger.info("Cancelling all running workflows")
+        await _workflow_manager.cancel_all()
+
     # Close PostgreSQL connection pool
     if _pg_pool:
         logger.info("Closing global PostgreSQL connection pool")
@@ -240,12 +257,15 @@ app.add_middleware(
 load_milvus_examples()
 load_qdrant_examples()
 
+# Include auth router
+app.include_router(auth_router)
+
 in_memory_store = InMemoryStore()
 graph = build_graph_with_memory()
 
 
 @app.post("/api/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, _user=Depends(require_auth)):
     # Check if MCP server configuration is enabled
     mcp_enabled = get_bool_env("ENABLE_MCP_SERVER_CONFIGURATION", False)
 
@@ -262,28 +282,144 @@ async def chat_stream(request: ChatRequest):
     if thread_id == "__default__":
         thread_id = str(uuid4())
 
+    messages = request.model_dump()["messages"]
+    mcp_settings = request.mcp_settings if mcp_enabled else {}
+
+    # Check if there's already a running workflow for this thread
+    existing_run = _workflow_manager.get_run(thread_id) if _workflow_manager else None
+    if existing_run and existing_run.status == "running":
+        logger.info(f"Reconnecting to existing workflow for thread {thread_id}")
+        return StreamingResponse(
+            _subscribe_to_workflow(thread_id, from_index=0),
+            media_type="text/event-stream",
+        )
+
+    # Start a new background workflow
+    def make_generator_factory():
+        # Capture all parameters in closure
+        _messages = messages
+        _thread_id = thread_id
+        _resources = request.resources
+        _max_plan_iterations = request.max_plan_iterations
+        _max_step_num = request.max_step_num
+        _max_search_results = request.max_search_results
+        _auto_accepted_plan = request.auto_accepted_plan
+        _interrupt_feedback = request.interrupt_feedback
+        _mcp_settings = mcp_settings
+        _enable_background_investigation = request.enable_background_investigation
+        _enable_web_search = request.enable_web_search
+        _report_style = request.report_style
+        _enable_deep_thinking = request.enable_deep_thinking
+        _enable_clarification = request.enable_clarification
+        _max_clarification_rounds = request.max_clarification_rounds
+        _locale = request.locale
+        _interrupt_before_tools = request.interrupt_before_tools
+
+        async def factory():
+            async for event in _astream_workflow_generator(
+                _messages,
+                _thread_id,
+                _resources,
+                _max_plan_iterations,
+                _max_step_num,
+                _max_search_results,
+                _auto_accepted_plan,
+                _interrupt_feedback,
+                _mcp_settings,
+                _enable_background_investigation,
+                _enable_web_search,
+                _report_style,
+                _enable_deep_thinking,
+                _enable_clarification,
+                _max_clarification_rounds,
+                _locale,
+                _interrupt_before_tools,
+            ):
+                yield event
+
+        return factory
+
+    if not _workflow_manager:
+        raise HTTPException(
+            status_code=503,
+            detail="Server is still starting up. Please try again shortly.",
+        )
+
+    _workflow_manager.start_workflow(thread_id, make_generator_factory())
+
     return StreamingResponse(
-        _astream_workflow_generator(
-            request.model_dump()["messages"],
-            thread_id,
-            request.resources,
-            request.max_plan_iterations,
-            request.max_step_num,
-            request.max_search_results,
-            request.auto_accepted_plan,
-            request.interrupt_feedback,
-            request.mcp_settings if mcp_enabled else {},
-            request.enable_background_investigation,
-            request.enable_web_search,
-            request.report_style,
-            request.enable_deep_thinking,
-            request.enable_clarification,
-            request.max_clarification_rounds,
-            request.locale,
-            request.interrupt_before_tools,
-        ),
+        _subscribe_to_workflow(thread_id, from_index=0),
         media_type="text/event-stream",
     )
+
+
+async def _subscribe_to_workflow(thread_id: str, from_index: int = 0):
+    """Subscribe to a workflow's events via the WorkflowManager."""
+    if not _workflow_manager:
+        return
+    async for event_str in _workflow_manager.subscribe(thread_id, from_index):
+        yield event_str
+
+
+@app.get("/api/chat/status/{thread_id}")
+async def chat_workflow_status(thread_id: str, _user=Depends(require_auth)):
+    """Get the status of a workflow for a given thread_id."""
+    safe_thread_id = sanitize_thread_id(thread_id)
+    logger.debug(f"[{safe_thread_id}] Checking workflow status")
+
+    if not _workflow_manager:
+        return {"thread_id": thread_id, "status": "not_found", "event_count": 0}
+
+    run = _workflow_manager.get_run(thread_id)
+    if run is None:
+        return {"thread_id": thread_id, "status": "not_found", "event_count": 0}
+
+    return {
+        "thread_id": thread_id,
+        "status": run.status,
+        "event_count": len(run.events),
+    }
+
+
+@app.get("/api/chat/stream/{thread_id}")
+async def chat_stream_reconnect(
+    thread_id: str,
+    last_event_index: int = Query(default=0, ge=0),
+    _user=Depends(require_auth),
+):
+    """
+    Reconnect to an existing workflow's SSE stream.
+    Replays events from last_event_index onward.
+    """
+    safe_thread_id = sanitize_thread_id(thread_id)
+    logger.debug(
+        f"[{safe_thread_id}] Reconnecting to workflow stream from index {last_event_index}"
+    )
+
+    if not _workflow_manager:
+        raise HTTPException(status_code=404, detail="Workflow manager not available")
+
+    run = _workflow_manager.get_run(thread_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="No workflow found for this thread")
+
+    return StreamingResponse(
+        _subscribe_to_workflow(thread_id, from_index=last_event_index),
+        media_type="text/event-stream",
+    )
+
+
+@app.get("/api/chat/history/{thread_id}")
+async def chat_history(thread_id: str, _user=Depends(require_auth)):
+    """Retrieve stored SSE events for a given thread_id to restore a session."""
+    safe_thread_id = sanitize_thread_id(thread_id)
+    logger.debug(f"[{safe_thread_id}] Retrieving chat history")
+    try:
+        result = get_chat_stream_history(thread_id)
+        return result
+    except Exception as e:
+        logger.exception(f"[{safe_thread_id}] Error retrieving chat history")
+        raise HTTPException(status_code=500, detail=INTERNAL_SERVER_ERROR_DETAIL)
 
 
 def _validate_tool_call_chunks(tool_call_chunks):
@@ -741,10 +877,10 @@ async def _stream_graph_events(
         
         logger.debug(f"[{safe_thread_id}] Graph event stream completed. Total events: {event_count}")
     except asyncio.CancelledError:
-        # User cancelled/interrupted the stream - this is normal, not an error.
-        # Do not re-raise: ending the generator gracefully lets FastAPI close the
-        # HTTP response properly so the client won't see "error decoding response body".
-        logger.info(f"[{safe_thread_id}] Graph event stream cancelled by user after {event_count} events")
+        # Workflow runs in a background task now, so CancelledError only happens
+        # during server shutdown (cancel_all). Emit a cancellation event and
+        # re-raise so WorkflowManager can mark the run properly.
+        logger.info(f"[{safe_thread_id}] Graph event stream cancelled after {event_count} events")
         try:
             yield _make_event("error", {
                 "thread_id": thread_id,
@@ -752,8 +888,8 @@ async def _stream_graph_events(
                 "reason": "cancelled",
             })
         except Exception:
-            pass  # Client likely already disconnected
-        return
+            pass
+        raise
     except Exception as e:
         logger.exception(f"[{safe_thread_id}] Error during graph execution")
         yield _make_event(
@@ -966,7 +1102,7 @@ def _make_event(event_type: str, data: dict[str, any]):
 
 
 @app.post("/api/tts")
-async def text_to_speech(request: TTSRequest):
+async def text_to_speech(request: TTSRequest, _user=Depends(require_auth)):
     """Convert text to speech using volcengine TTS API."""
     app_id = get_str_env("VOLCENGINE_TTS_APPID", "")
     if not app_id:
@@ -1022,7 +1158,7 @@ async def text_to_speech(request: TTSRequest):
 
 
 @app.post("/api/podcast/generate")
-async def generate_podcast(request: GeneratePodcastRequest):
+async def generate_podcast(request: GeneratePodcastRequest, _user=Depends(require_auth)):
     try:
         report_content = request.content
         print(report_content)
@@ -1036,7 +1172,7 @@ async def generate_podcast(request: GeneratePodcastRequest):
 
 
 @app.post("/api/ppt/generate")
-async def generate_ppt(request: GeneratePPTRequest):
+async def generate_ppt(request: GeneratePPTRequest, _user=Depends(require_auth)):
     try:
         report_content = request.content
         print(report_content)
@@ -1055,7 +1191,7 @@ async def generate_ppt(request: GeneratePPTRequest):
 
 
 @app.post("/api/prose/generate")
-async def generate_prose(request: GenerateProseRequest):
+async def generate_prose(request: GenerateProseRequest, _user=Depends(require_auth)):
     try:
         sanitized_prompt = request.prompt.replace("\r\n", "").replace("\n", "")
         logger.info(f"Generating prose for prompt: {sanitized_prompt}")
@@ -1079,7 +1215,7 @@ async def generate_prose(request: GenerateProseRequest):
 
 
 @app.post("/api/report/evaluate", response_model=EvaluateReportResponse)
-async def evaluate_report(request: EvaluateReportRequest):
+async def evaluate_report(request: EvaluateReportRequest, _user=Depends(require_auth)):
     """Evaluate report quality using automated metrics and optionally LLM-as-Judge."""
     try:
         evaluator = ReportEvaluator(use_llm=request.use_llm)
@@ -1112,7 +1248,7 @@ async def evaluate_report(request: EvaluateReportRequest):
 
 
 @app.post("/api/prompt/enhance")
-async def enhance_prompt(request: EnhancePromptRequest):
+async def enhance_prompt(request: EnhancePromptRequest, _user=Depends(require_auth)):
     try:
         sanitized_prompt = request.prompt.replace("\r\n", "").replace("\n", "")
         logger.info(f"Enhancing prompt: {sanitized_prompt}")
@@ -1153,7 +1289,7 @@ async def enhance_prompt(request: EnhancePromptRequest):
 
 
 @app.post("/api/mcp/server/metadata", response_model=MCPServerMetadataResponse)
-async def mcp_server_metadata(request: MCPServerMetadataRequest):
+async def mcp_server_metadata(request: MCPServerMetadataRequest, _user=Depends(require_auth)):
     """Get information about an MCP server."""
     # Check if MCP server configuration is enabled
     if not get_bool_env("ENABLE_MCP_SERVER_CONFIGURATION", False):
@@ -1203,13 +1339,13 @@ async def mcp_server_metadata(request: MCPServerMetadataRequest):
 
 
 @app.get("/api/rag/config", response_model=RAGConfigResponse)
-async def rag_config():
+async def rag_config(_user=Depends(require_auth)):
     """Get the config of the RAG."""
     return RAGConfigResponse(provider=SELECTED_RAG_PROVIDER)
 
 
 @app.get("/api/rag/resources", response_model=RAGResourcesResponse)
-async def rag_resources(request: Annotated[RAGResourceRequest, Query()]):
+async def rag_resources(request: Annotated[RAGResourceRequest, Query()], _user=Depends(require_auth)):
     """Get the resources of the RAG."""
     retriever = build_retriever()
     if retriever:
@@ -1234,7 +1370,7 @@ def _sanitize_filename(filename: str) -> str:
 
 
 @app.post("/api/rag/upload", response_model=Resource)
-async def upload_rag_resource(file: UploadFile):
+async def upload_rag_resource(file: UploadFile, _user=Depends(require_auth)):
     # Validate filename exists
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required for upload")
@@ -1291,4 +1427,5 @@ async def config():
     return ConfigResponse(
         rag=RAGConfigResponse(provider=SELECTED_RAG_PROVIDER),
         models=get_configured_llm_models(),
+        auth=AuthConfigResponse(enabled=is_auth_enabled()),
     )

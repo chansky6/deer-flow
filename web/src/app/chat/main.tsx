@@ -3,9 +3,9 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { useStore } from "~/core/store";
+import { useStore, restoreSession } from "~/core/store";
 import { cn } from "~/lib/utils";
 
 import { MessagesBlock } from "./components/messages-block";
@@ -17,6 +17,20 @@ export default function Main() {
     () => openResearchId !== null,
     [openResearchId],
   );
+  const [restoring, setRestoring] = useState(true);
+
+  useEffect(() => {
+    restoreSession().finally(() => setRestoring(false));
+  }, []);
+
+  if (restoring) {
+    return (
+      <div className="flex h-full w-full items-center justify-center">
+        <div className="text-muted-foreground text-sm">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(

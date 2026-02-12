@@ -7,7 +7,12 @@ export interface RagConfig {
   provider: string;
 }
 
+export interface AuthConfig {
+  enabled: boolean;
+}
+
 export interface DeerFlowConfig {
   rag: RagConfig;
   models: ModelConfig;
+  auth: AuthConfig;
 }

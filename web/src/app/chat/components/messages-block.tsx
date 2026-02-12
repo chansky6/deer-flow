@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { motion } from "framer-motion";
-import { FastForward, Play } from "lucide-react";
+import { FastForward, Play, RotateCcw } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useRef, useState } from "react";
 
@@ -18,7 +18,7 @@ import { fastForwardReplay } from "~/core/api";
 import { useReplayMetadata } from "~/core/api/hooks";
 import type { Option, Resource } from "~/core/messages";
 import { useReplay } from "~/core/replay";
-import { sendMessage, useMessageIds, useStore } from "~/core/store";
+import { sendMessage, resetSession, useMessageIds, useStore } from "~/core/store";
 import { env } from "~/env";
 import { cn } from "~/lib/utils";
 
@@ -97,7 +97,19 @@ export function MessagesBlock({ className }: { className?: string }) {
         <ConversationStarter onSend={handleSend} />
       )}
       {!isReplay ? (
-        <div className="relative flex h-42 shrink-0 pb-4">
+        <div className="relative flex h-42 shrink-0 flex-col gap-2 pb-4">
+          {messageCount > 0 && !responding && (
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetSession}
+              >
+                <RotateCcw size={14} />
+                {t("newConversation")}
+              </Button>
+            </div>
+          )}
           <InputBox
             className="h-full w-full"
             responding={responding}
