@@ -1,0 +1,28 @@
+# Frontend Production Dockerfile
+FROM node:22-alpine AS builder
+
+RUN corepack enable && corepack install -g pnpm@10.26.2
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/pnpm-lock.yaml ./frontend/
+RUN cd frontend && pnpm install --frozen-lockfile
+
+COPY frontend ./frontend
+
+ENV SKIP_ENV_VALIDATION=1
+RUN cd frontend && pnpm build
+
+# ── Run ──
+FROM node:22-alpine
+
+RUN corepack enable && corepack install -g pnpm@10.26.2
+
+WORKDIR /app/frontend
+
+COPY --from=builder /app/frontend ./
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+CMD ["pnpm", "start"]

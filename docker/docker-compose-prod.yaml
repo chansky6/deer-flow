@@ -1,0 +1,93 @@
+# DeerFlow Production Environment
+# Usage: docker compose -f docker-compose-prod.yaml up --build -d
+#
+# Prerequisites:
+#   - Copy config.example.yaml to ../config.yaml and configure models
+#   - Copy .env.example to ../.env and set API keys
+#   - Copy frontend/.env.example to ../frontend/.env
+#
+# Access: http://localhost:80
+
+services:
+  # ── Reverse Proxy ──
+  nginx:
+    image: nginx:alpine
+    container_name: deer-flow-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_started
+      gateway:
+        condition: service_started
+      langgraph:
+        condition: service_started
+    networks:
+      - deer-flow-prod
+    restart: always
+
+  # ── Frontend (Next.js production build) ──
+  frontend:
+    build:
+      context: ../
+      dockerfile: frontend/Dockerfile.prod
+    container_name: deer-flow-frontend
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - ../frontend/.env
+    networks:
+      - deer-flow-prod
+    restart: always
+
+  # ── Gateway API ──
+  gateway:
+    build:
+      context: ../
+      dockerfile: backend/Dockerfile.prod
+    container_name: deer-flow-gateway
+    command: >
+      sh -c "cd backend && uv run uvicorn src.gateway.app:app
+      --host 0.0.0.0 --port 8001 --workers 2"
+    volumes:
+      - ../config.yaml:/app/config.yaml:ro
+      - ../extensions_config.json:/app/extensions_config.json
+      - ../skills:/app/skills
+      - deer-flow-data:/app/backend/.deer-flow
+    env_file:
+      - ../.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - deer-flow-prod
+    restart: always
+
+  # ── LangGraph Server ──
+  langgraph:
+    build:
+      context: ../
+      dockerfile: backend/Dockerfile.prod
+    container_name: deer-flow-langgraph
+    command: >
+      sh -c "cd backend && uv run langgraph dev
+      --no-browser --allow-blocking
+      --host 0.0.0.0 --port 2024"
+    volumes:
+      - ../config.yaml:/app/config.yaml:ro
+      - ../extensions_config.json:/app/extensions_config.json
+      - ../skills:/app/skills
+      - deer-flow-data:/app/backend/.deer-flow
+    env_file:
+      - ../.env
+    networks:
+      - deer-flow-prod
+    restart: always
+
+volumes:
+  deer-flow-data:
+
+networks:
+  deer-flow-prod:
+    driver: bridge

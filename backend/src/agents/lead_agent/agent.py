@@ -36,12 +36,16 @@ def _create_summarization_middleware() -> SummarizationMiddleware | None:
     keep = config.keep.to_tuple()
 
     # Prepare model parameter
+    # Always create a model instance (not a string name) so we can attach profile
+    # info for custom models that LangGraph doesn't recognize.
     if config.model_name:
-        model = config.model_name
+        model = create_chat_model(name=config.model_name, thinking_enabled=False)
     else:
-        # Use a lightweight model for summarization to save costs
-        # Falls back to default model if not explicitly specified
         model = create_chat_model(thinking_enabled=False)
+
+    # Attach model profile if missing, so SummarizationMiddleware can compute token limits
+    if not getattr(model, "profile", None):
+        model.profile = {"max_input_tokens": 32768}
 
     # Prepare kwargs
     kwargs = {

@@ -175,11 +175,14 @@ class SubagentExecutor:
             SandboxMiddleware(lazy_init=True),  # Reuse parent's sandbox (no re-acquisition)
         ]
 
+        # Inject current date into subagent prompt so it knows the current year
+        system_prompt = self.config.system_prompt + f"\n<current_date>{datetime.now().strftime('%Y-%m-%d, %A')}</current_date>"
+
         return create_agent(
             model=model,
             tools=self.tools,
             middleware=middlewares,
-            system_prompt=self.config.system_prompt,
+            system_prompt=system_prompt,
             state_schema=ThreadState,
         )
 
