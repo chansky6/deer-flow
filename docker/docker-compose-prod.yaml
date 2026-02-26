@@ -36,6 +36,7 @@ services:
     container_name: deer-flow-frontend
     environment:
       - NODE_ENV=production
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-default-change-me-in-production}
     env_file:
       - ../frontend/.env
     networks:
@@ -79,6 +80,7 @@ services:
       - ../extensions_config.json:/app/extensions_config.json
       - ../skills:/app/skills
       - deer-flow-data:/app/backend/.deer-flow
+      - langgraph-state:/app/backend/.langgraph_api
     env_file:
       - ../.env
     networks:
@@ -87,6 +89,7 @@ services:
 
 volumes:
   deer-flow-data:
+  langgraph-state:
 
 networks:
   deer-flow-prod:

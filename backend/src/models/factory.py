@@ -19,6 +19,8 @@ def create_chat_model(name: str | None = None, thinking_enabled: bool = False, *
     """
     config = get_app_config()
     if name is None:
+        if not config.models:
+            raise ValueError("No models configured in config.yaml. Please add at least one model to the 'models' list.") from None
         name = config.models[0].name
     model_config = config.get_model_config(name)
     if model_config is None:
