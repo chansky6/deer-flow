@@ -156,17 +156,26 @@ class AppConfig(BaseModel):
 
 
 _app_config: AppConfig | None = None
+_config_mtime: float = 0.0
 
 
 def get_app_config() -> AppConfig:
     """Get the DeerFlow config instance.
 
-    Returns a cached singleton instance. Use `reload_app_config()` to reload
-    from file, or `reset_app_config()` to clear the cache.
+    Returns a cached instance that auto-reloads when config.yaml is modified
+    (detected via file mtime). This allows all processes (Gateway, LangGraph)
+    to pick up admin panel changes without restart.
     """
-    global _app_config
-    if _app_config is None:
+    global _app_config, _config_mtime
+    try:
+        path = AppConfig.resolve_config_path()
+        current_mtime = path.stat().st_mtime
+    except (FileNotFoundError, OSError):
+        current_mtime = 0.0
+
+    if _app_config is None or current_mtime != _config_mtime:
         _app_config = AppConfig.from_file()
+        _config_mtime = current_mtime
     return _app_config
 
 
@@ -183,8 +192,13 @@ def reload_app_config(config_path: str | None = None) -> AppConfig:
     Returns:
         The newly loaded AppConfig instance.
     """
-    global _app_config
+    global _app_config, _config_mtime
     _app_config = AppConfig.from_file(config_path)
+    try:
+        path = AppConfig.resolve_config_path(config_path)
+        _config_mtime = path.stat().st_mtime
+    except (FileNotFoundError, OSError):
+        _config_mtime = 0.0
     return _app_config
 
 
@@ -195,8 +209,9 @@ def reset_app_config() -> None:
     `get_app_config()` to reload from file. Useful for testing
     or when switching between different configurations.
     """
-    global _app_config
+    global _app_config, _config_mtime
     _app_config = None
+    _config_mtime = 0.0
 
 
 def set_app_config(config: AppConfig) -> None:

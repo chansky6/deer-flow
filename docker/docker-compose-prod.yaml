@@ -53,7 +53,7 @@ services:
       sh -c "cd backend && uv run uvicorn src.gateway.app:app
       --host 0.0.0.0 --port 8001 --workers 2"
     volumes:
-      - ../config.yaml:/app/config.yaml:ro
+      - ../config.yaml:/app/config.yaml
       - ../extensions_config.json:/app/extensions_config.json
       - ../skills:/app/skills
       - deer-flow-data:/app/backend/.deer-flow
@@ -76,7 +76,7 @@ services:
       --no-browser --allow-blocking
       --host 0.0.0.0 --port 2024"
     volumes:
-      - ../config.yaml:/app/config.yaml:ro
+      - ../config.yaml:/app/config.yaml
       - ../extensions_config.json:/app/extensions_config.json
       - ../skills:/app/skills
       - deer-flow-data:/app/backend/.deer-flow

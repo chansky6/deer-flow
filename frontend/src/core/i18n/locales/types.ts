@@ -245,4 +245,87 @@ export interface Translations {
       emptyDescription: string;
     };
   };
+
+  // Admin
+  admin: {
+    title: string;
+    backToWorkspace: string;
+    configNote: string;
+    immediateNote: string;
+    save: string;
+    saving: string;
+    saveAll: string;
+    addModel: string;
+    addTool: string;
+    addGroup: string;
+    addTrigger: string;
+    remove: string;
+    done: string;
+    unnamed: string;
+    useDefault: string;
+    nav: {
+      models: string;
+      tools: string;
+      mcp: string;
+      skills: string;
+      sandbox: string;
+      memory: string;
+      title: string;
+      summarization: string;
+      subagents: string;
+    };
+    models: {
+      title: string;
+      name: string;
+      displayName: string;
+      use: string;
+      modelId: string;
+      apiKey: string;
+      apiBase: string;
+      maxTokens: string;
+      vision: string;
+      thinking: string;
+    };
+    sandbox: {
+      title: string;
+      provider: string;
+      image: string;
+      port: string;
+      baseUrl: string;
+      autoStart: string;
+      containerPrefix: string;
+      idleTimeout: string;
+    };
+    memory: {
+      title: string;
+      enabled: string;
+      storagePath: string;
+      debounceSeconds: string;
+      modelName: string;
+      maxFacts: string;
+      confidenceThreshold: string;
+      injectionEnabled: string;
+      maxInjectionTokens: string;
+    };
+    titleGen: {
+      title: string;
+      enabled: string;
+      maxWords: string;
+      maxChars: string;
+      modelName: string;
+    };
+    summarization: {
+      title: string;
+      enabled: string;
+      modelName: string;
+      triggers: string;
+      keepPolicy: string;
+      trimTokens: string;
+    };
+    subagents: {
+      title: string;
+      defaultTimeout: string;
+      perAgentOverrides: string;
+    };
+  };
 }

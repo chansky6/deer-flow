@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from src.gateway.config import get_gateway_config
 from src.gateway.routers import artifacts, mcp, memory, models, skills, uploads
+from src.gateway.routers import config as config_router
 
 # Configure logging
 logging.basicConfig(
@@ -91,6 +92,10 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
                 "description": "Upload and manage user files for threads",
             },
             {
+                "name": "config",
+                "description": "Admin panel configuration management for config.yaml sections",
+            },
+            {
                 "name": "health",
                 "description": "Health check and system status endpoints",
             },
@@ -117,6 +122,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
 
     # Uploads API is mounted at /api/threads/{thread_id}/uploads
     app.include_router(uploads.router)
+
+    # Config API is mounted at /api/config/*
+    app.include_router(config_router.router)
 
     @app.get("/health", tags=["health"])
     async def health_check() -> dict:
