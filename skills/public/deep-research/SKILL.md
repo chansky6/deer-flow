@@ -44,7 +44,7 @@ Example:
 ```
 Topic: "AI in healthcare"
 Initial searches:
-- "AI healthcare applications 2024"
+- "AI healthcare applications 2026"
 - "artificial intelligence medical diagnosis"
 - "healthcare AI market trends"
 
@@ -89,7 +89,7 @@ Ensure comprehensive coverage by seeking diverse information types:
 | **Facts & Data** | Concrete evidence | "statistics", "data", "numbers", "market size" |
 | **Examples & Cases** | Real-world applications | "case study", "example", "implementation" |
 | **Expert Opinions** | Authority perspectives | "expert analysis", "interview", "commentary" |
-| **Trends & Predictions** | Future direction | "trends 2024", "forecast", "future of" |
+| **Trends & Predictions** | Future direction | "trends 2026", "forecast", "future of" |
 | **Comparisons** | Context and alternatives | "vs", "comparison", "alternatives" |
 | **Challenges & Criticisms** | Balanced view | "challenges", "limitations", "criticism" |
 
@@ -112,7 +112,7 @@ Before proceeding to content generation, verify:
 ```
 # Be specific with context
 ❌ "AI trends"
-✅ "enterprise AI adoption trends 2024"
+✅ "enterprise AI adoption trends 2026"
 
 # Include authoritative source hints
 "[topic] research paper"
@@ -125,7 +125,7 @@ Before proceeding to content generation, verify:
 "[topic] expert interview"
 
 # Use temporal qualifiers
-"[topic] 2024"
+"[topic] 2026"
 "[topic] latest"
 "[topic] recent developments"
 ```
@@ -175,3 +175,32 @@ After completing research, you should have:
 5. Current trends and relevant context
 
 **Only then proceed to content generation**, using the gathered information to create high-quality, well-informed content.
+
+## Citations & References
+
+**All research output MUST include proper citations.**
+
+### Inline Citations
+When presenting facts, data, or claims from web sources, add inline citations using the format:
+```markdown
+[citation:TITLE](URL)
+```
+
+Example:
+```markdown
+Global AI spending is projected to reach $300 billion by 2026 [citation:IDC AI Forecast](https://example.com/idc-report).
+```
+
+### References Section
+At the end of the report, include a **References** section listing all sources used:
+```markdown
+## References
+
+1. [Source Title](URL) - Brief description of the source
+2. [Source Title](URL) - Brief description of the source
+```
+
+### Citation Rules
+- Every major claim or data point should have a corresponding citation
+- Prefer authoritative sources (official reports, research papers, reputable media)
+- Do NOT fabricate URLs — only cite sources actually retrieved via `web_search` or `web_fetch`
