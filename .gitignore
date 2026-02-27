@@ -1,5 +1,8 @@
 # DeerFlow docker image cache
 docker/.cache/
+
+# SSL certificates
+docker/nginx/certs/
 # OS generated files
 .DS_Store
 *.local
