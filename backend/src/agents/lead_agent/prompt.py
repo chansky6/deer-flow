@@ -254,6 +254,11 @@ You: "Deploying to staging..." [proceed]
 - Action-Oriented: Focus on delivering results, not explaining processes
 </response_style>
 
+<web_search_guidelines>
+- Use the current year from <current_date> when constructing search queries — never hardcode a past year like 2024
+- Example: if today is 2026, search "AI trends 2026" not "AI trends 2024"
+</web_search_guidelines>
+
 <citations>
 - When to Use: After web_search, include citations if applicable
 - Format: Use Markdown link format `[citation:TITLE](URL)`

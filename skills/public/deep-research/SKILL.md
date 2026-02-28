@@ -107,6 +107,15 @@ Before proceeding to content generation, verify:
 
 ## Search Strategy Tips
 
+### Language & Source Authority Rules
+
+- **Non-Chinese countries/regions**: Always use **English** search queries, regardless of the user's language. Do NOT translate topic keywords into Chinese for non-Chinese subjects.
+- **Authoritative sources**: Prioritize official, peer-reviewed, or widely recognized sources:
+  - Government & intergovernmental: `.gov`, `.edu`, UN, WHO, World Bank, IMF, OECD
+  - Academic: Google Scholar, PubMed, arXiv, JSTOR, Nature, Science
+  - Industry leaders: McKinsey, Gartner, Forrester, Bloomberg, Reuters, Financial Times
+  - Avoid: blogs, forums, social media, anonymous wikis, or unverifiable sources
+
 ### Effective Query Patterns
 
 ```
@@ -181,7 +190,7 @@ After completing research, you should have:
 **All research output MUST include proper citations.**
 
 ### Inline Citations
-When presenting facts, data, or claims from web sources, add inline citations using the format:
+When presenting facts, data, or claims from web sources, must **add inline citations**. Use the format:
 ```markdown
 [citation:TITLE](URL)
 ```
