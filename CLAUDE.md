@@ -93,6 +93,7 @@ Config lookup order: explicit path → env var (`DEER_FLOW_CONFIG_PATH` / `DEER_
 - **`core/`** — Business logic: threads (streaming, state), API client singleton, artifacts, i18n, settings, memory, skills, MCP, messages.
 - **`components/`** — `ui/` and `ai-elements/` are auto-generated (Shadcn, MagicUI, Vercel AI SDK) — don't manually edit. `workspace/` and `landing/` are app components.
 - **Data flow**: User input → thread hooks → LangGraph SDK streaming → state updates → React rendering.
+- **Tool routing**: Chat input tool selection can attach `task_type`, `tool_name`, and `tool_args` to submit payloads via LangGraph `context` for backend flow routing.
 
 See `backend/CLAUDE.md` and `frontend/CLAUDE.md` for detailed sub-project guidance.
 

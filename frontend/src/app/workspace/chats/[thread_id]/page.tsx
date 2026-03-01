@@ -186,7 +186,7 @@ export default function ChatPage() {
     threadId,
     thread,
     threadContext: {
-      ...settings.context,
+      model_name: settings.context.model_name as string | undefined,
       thinking_enabled: settings.context.mode !== "flash",
       is_plan_mode:
         settings.context.mode === "pro" || settings.context.mode === "ultra",

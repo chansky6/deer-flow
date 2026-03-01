@@ -3,15 +3,22 @@
 import type { ChatStatus } from "ai";
 import {
   CheckIcon,
+  CompassIcon,
   GraduationCapIcon,
+  ImageIcon,
   LightbulbIcon,
+  MicroscopeIcon,
   PaperclipIcon,
-  PlusIcon,
-  SparklesIcon,
+  PenLineIcon,
   RocketIcon,
+  ShapesIcon,
+  SlidersHorizontalIcon,
+  SparklesIcon,
+  VideoIcon,
+  XIcon,
   ZapIcon,
+  type LucideIcon,
 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -38,11 +45,9 @@ import {
   usePromptInputController,
   type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input";
-import { ConfettiButton } from "@/components/ui/confetti-button";
 import {
   DropdownMenuGroup,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/core/i18n/hooks";
 import { useModels } from "@/core/models/hooks";
@@ -58,7 +63,6 @@ import {
   ModelSelectorName,
   ModelSelectorTrigger,
 } from "../ai-elements/model-selector";
-import { Suggestion, Suggestions } from "../ai-elements/suggestion";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,6 +74,14 @@ import { ModeHoverGuide } from "./mode-hover-guide";
 import { Tooltip } from "./tooltip";
 
 type InputMode = "flash" | "thinking" | "pro" | "ultra";
+type ToolSelection = {
+  taskType: string;
+  toolName: string;
+  label: string;
+  icon: LucideIcon;
+  prompt?: string;
+  args: Record<string, unknown>;
+};
 
 function getResolvedMode(
   mode: InputMode | undefined,
@@ -111,20 +123,176 @@ export function InputBox({
   isNewThread?: boolean;
   initialValue?: string;
   onContextChange?: (
-    context: Omit<
-      AgentThreadContext,
-      "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
-    > & {
-      mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+    context: Partial<
+      Omit<
+        AgentThreadContext,
+        "thread_id" | "is_plan_mode" | "thinking_enabled" | "subagent_enabled"
+      > & {
+        mode: "flash" | "thinking" | "pro" | "ultra" | undefined;
+      }
+    >,
+  ) => void;
+  onSubmit?: (
+    message: PromptInputMessage,
+    toolSelection?: {
+      task_type: string;
+      tool_name: string;
+      tool_args: Record<string, unknown>;
     },
   ) => void;
-  onSubmit?: (message: PromptInputMessage) => void;
   onStop?: () => void;
 }) {
   const { t } = useI18n();
-  const searchParams = useSearchParams();
+  const { textInput } = usePromptInputController();
   const [modelDialogOpen, setModelDialogOpen] = useState(false);
   const { models } = useModels();
+
+  const toolOptions = useMemo(() => {
+    const [writeSuggestion, researchSuggestion, collectSuggestion, learnSuggestion] =
+      t.inputBox.suggestions;
+    const [webpageRaw, imageRaw, videoRaw, , skillRaw] =
+      t.inputBox.suggestionsCreate;
+    const webpageOption =
+      webpageRaw && "type" in webpageRaw ? undefined : webpageRaw;
+    const imageOption =
+      imageRaw && "type" in imageRaw ? undefined : imageRaw;
+    const videoOption =
+      videoRaw && "type" in videoRaw ? undefined : videoRaw;
+    const skillOption =
+      skillRaw && "type" in skillRaw ? undefined : skillRaw;
+
+    return [
+      {
+        taskType: "deep_research",
+        toolName: "deep_research",
+        label: researchSuggestion?.suggestion ?? "Deep Research",
+        icon: MicroscopeIcon,
+        prompt: researchSuggestion?.prompt,
+        args: { depth: "high", min_sources: 6 },
+      },
+      {
+        taskType: "content_writing",
+        toolName: "write",
+        label: writeSuggestion?.suggestion ?? "Write",
+        icon: PenLineIcon,
+        prompt: writeSuggestion?.prompt,
+        args: { style: "article" },
+      },
+      {
+        taskType: "data_collection",
+        toolName: "collect",
+        label: collectSuggestion?.suggestion ?? "Collect",
+        icon: ShapesIcon,
+        prompt: collectSuggestion?.prompt,
+        args: { output: "report" },
+      },
+      {
+        taskType: "learning_tutorial",
+        toolName: "learn",
+        label: learnSuggestion?.suggestion ?? "Learn",
+        icon: GraduationCapIcon,
+        prompt: learnSuggestion?.prompt,
+        args: { format: "tutorial" },
+      },
+      {
+        taskType: "webpage_generation",
+        toolName: "webpage",
+        label: webpageOption?.suggestion ?? "Webpage",
+        icon: CompassIcon,
+        prompt: webpageOption?.prompt,
+        args: { artifact: "html" },
+      },
+      {
+        taskType: "image_generation",
+        toolName: "image",
+        label: imageOption?.suggestion ?? "Image",
+        icon: ImageIcon,
+        prompt: imageOption?.prompt,
+        args: { artifact: "image" },
+      },
+      {
+        taskType: "video_generation",
+        toolName: "video",
+        label: videoOption?.suggestion ?? "Video",
+        icon: VideoIcon,
+        prompt: videoOption?.prompt,
+        args: { artifact: "video" },
+      },
+      {
+        taskType: "skill_creation",
+        toolName: "skill",
+        label: skillOption?.suggestion ?? "Skill",
+        icon: SparklesIcon,
+        prompt: skillOption?.prompt,
+        args: { mode: "skill_creator" },
+      },
+    ] satisfies ToolSelection[];
+  }, [t.inputBox.suggestions, t.inputBox.suggestionsCreate]);
+
+  const contextTaskType =
+    typeof context.task_type === "string" ? context.task_type : undefined;
+  const contextToolName =
+    typeof context.tool_name === "string" ? context.tool_name : undefined;
+  const contextToolArgs =
+    context.tool_args && typeof context.tool_args === "object"
+      ? (context.tool_args as Record<string, unknown>)
+      : undefined;
+
+  const selectedTool = useMemo(() => {
+    if (!contextTaskType || !contextToolName) {
+      return null;
+    }
+    const option = toolOptions.find(
+      (tool) =>
+        tool.taskType === contextTaskType && tool.toolName === contextToolName,
+    );
+    if (!option) {
+      return null;
+    }
+    return {
+      ...option,
+      args: contextToolArgs ?? option.args,
+    };
+  }, [contextTaskType, contextToolArgs, contextToolName, toolOptions]);
+
+  const applyPromptTemplate = useCallback(
+    (prompt: string | undefined) => {
+      if (!prompt) {
+        return;
+      }
+      if (textInput.value.trim()) {
+        return;
+      }
+      textInput.setInput(prompt);
+      setTimeout(() => {
+        const textarea = document.querySelector<HTMLTextAreaElement>(
+          "textarea[name='message']",
+        );
+        if (!textarea) {
+          return;
+        }
+        const selStart = prompt.indexOf("[");
+        const selEnd = prompt.indexOf("]");
+        if (selStart !== -1 && selEnd !== -1) {
+          textarea.setSelectionRange(selStart, selEnd + 1);
+          textarea.focus();
+        }
+      }, 300);
+    },
+    [textInput],
+  );
+
+  const handleToolSelect = useCallback(
+    (tool: ToolSelection) => {
+      onContextChange?.({
+        task_type: tool.taskType,
+        tool_name: tool.toolName,
+        tool_args: tool.args,
+      });
+      applyPromptTemplate(tool.prompt);
+    },
+    [applyPromptTemplate, onContextChange],
+  );
 
   useEffect(() => {
     if (models.length === 0) {
@@ -141,7 +309,6 @@ export function InputBox({
     }
 
     onContextChange?.({
-      ...context,
       model_name: nextModelName,
       mode: nextMode,
     });
@@ -166,7 +333,6 @@ export function InputBox({
         return;
       }
       onContextChange?.({
-        ...context,
         model_name,
         mode: getResolvedMode(context.mode, model.supports_thinking ?? false),
       });
@@ -178,11 +344,10 @@ export function InputBox({
   const handleModeSelect = useCallback(
     (mode: InputMode) => {
       onContextChange?.({
-        ...context,
         mode: getResolvedMode(mode, supportThinking),
       });
     },
-    [onContextChange, context, supportThinking],
+    [onContextChange, supportThinking],
   );
   const handleSubmit = useCallback(
     async (message: PromptInputMessage) => {
@@ -193,9 +358,18 @@ export function InputBox({
       if (!message.text) {
         return;
       }
-      onSubmit?.(message);
+      onSubmit?.(
+        message,
+        selectedTool
+          ? {
+              task_type: selectedTool.taskType,
+              tool_name: selectedTool.toolName,
+              tool_args: selectedTool.args,
+            }
+          : undefined,
+      );
     },
-    [onSubmit, onStop, status],
+    [onSubmit, onStop, selectedTool, status],
   );
   return (
     <PromptInput
@@ -240,6 +414,20 @@ export function InputBox({
             </PromptInputActionMenuContent>
           </PromptInputActionMenu> */}
           <AddAttachmentsButton className="px-2!" />
+          <ToolSelector
+            label={t.settings.sections.tools}
+            disabled={disabled}
+            options={toolOptions}
+            selectedTool={selectedTool}
+            onSelect={handleToolSelect}
+            onClear={() =>
+              onContextChange?.({
+                task_type: undefined,
+                tool_name: undefined,
+                tool_args: undefined,
+              })
+            }
+          />
           <PromptInputActionMenu>
             <ModeHoverGuide
               mode={
@@ -450,11 +638,6 @@ export function InputBox({
           />
         </PromptInputTools>
       </PromptInputFooter>
-      {isNewThread && searchParams.get("mode") !== "skill" && (
-        <div className="absolute right-0 -bottom-20 left-0 z-0 flex items-center justify-center">
-          <SuggestionList />
-        </div>
-      )}
       {!isNewThread && (
         <div className="bg-background absolute right-0 -bottom-[17px] left-0 z-0 h-4"></div>
       )}
@@ -462,72 +645,59 @@ export function InputBox({
   );
 }
 
-function SuggestionList() {
-  const { t } = useI18n();
-  const { textInput } = usePromptInputController();
-  const handleSuggestionClick = useCallback(
-    (prompt: string | undefined) => {
-      if (!prompt) return;
-      textInput.setInput(prompt);
-      setTimeout(() => {
-        const textarea = document.querySelector<HTMLTextAreaElement>(
-          "textarea[name='message']",
-        );
-        if (textarea) {
-          const selStart = prompt.indexOf("[");
-          const selEnd = prompt.indexOf("]");
-          if (selStart !== -1 && selEnd !== -1) {
-            textarea.setSelectionRange(selStart, selEnd + 1);
-            textarea.focus();
-          }
-        }
-      }, 500);
-    },
-    [textInput],
-  );
+function ToolSelector({
+  label,
+  disabled,
+  options,
+  selectedTool,
+  onSelect,
+  onClear,
+}: {
+  label: string;
+  disabled?: boolean;
+  options: ToolSelection[];
+  selectedTool: ToolSelection | null;
+  onSelect: (tool: ToolSelection) => void;
+  onClear: () => void;
+}) {
   return (
-    <Suggestions className="min-h-16 w-fit items-start">
-      <ConfettiButton
-        className="text-muted-foreground cursor-pointer rounded-full px-4 text-xs font-normal"
-        variant="outline"
-        size="sm"
-        onClick={() => handleSuggestionClick(t.inputBox.surpriseMePrompt)}
-      >
-        <SparklesIcon className="size-4" /> {t.inputBox.surpriseMe}
-      </ConfettiButton>
-      {t.inputBox.suggestions.map((suggestion) => (
-        <Suggestion
-          key={suggestion.suggestion}
-          icon={suggestion.icon}
-          suggestion={suggestion.suggestion}
-          onClick={() => handleSuggestionClick(suggestion.prompt)}
-        />
-      ))}
+    <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Suggestion icon={PlusIcon} suggestion={t.common.create} />
+          <PromptInputButton disabled={disabled} className="px-2!">
+            <SlidersHorizontalIcon className="size-3" />
+            <span className="text-xs font-normal">{label}</span>
+          </PromptInputButton>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel className="text-muted-foreground text-xs">
+            {label}
+          </DropdownMenuLabel>
           <DropdownMenuGroup>
-            {t.inputBox.suggestionsCreate.map((suggestion, index) =>
-              "type" in suggestion && suggestion.type === "separator" ? (
-                <DropdownMenuSeparator key={index} />
-              ) : (
-                !("type" in suggestion) && (
-                  <DropdownMenuItem
-                    key={suggestion.suggestion}
-                    onClick={() => handleSuggestionClick(suggestion.prompt)}
-                  >
-                    {suggestion.icon && <suggestion.icon className="size-4" />}
-                    {suggestion.suggestion}
-                  </DropdownMenuItem>
-                )
-              ),
-            )}
+            {options.map((tool) => (
+              <DropdownMenuItem key={tool.taskType} onClick={() => onSelect(tool)}>
+                <tool.icon className="size-4" />
+                {tool.label}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-    </Suggestions>
+      {selectedTool && (
+        <div className="bg-primary/8 text-primary inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs">
+          <selectedTool.icon className="size-3.5" />
+          <span>{selectedTool.label}</span>
+          <button
+            type="button"
+            className="inline-flex cursor-pointer items-center justify-center rounded-full"
+            onClick={onClear}
+            aria-label="Clear selected tool"
+          >
+            <XIcon className="size-3" />
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 

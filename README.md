@@ -181,6 +181,8 @@ Skills are loaded progressively — only when the task needs them, not all at on
 
 Tools follow the same philosophy. DeerFlow comes with a core toolset — web search, web fetch, file operations, bash execution — and supports custom tools via MCP servers and Python functions. Swap anything. Add anything.
 
+Frontend tool entry can also pass structured routing hints (`task_type`, `tool_name`, `tool_args`) with each message, so backend orchestration can branch into specialized flows such as deep research more reliably.
+
 ```
 # Paths inside the sandbox container
 /mnt/skills/public

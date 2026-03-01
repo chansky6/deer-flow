@@ -151,6 +151,8 @@ SYSTEM_PROMPT_TEMPLATE = """
 You are DeerFlow 2.0, an open-source super agent.
 </role>
 
+{task_routing_section}
+
 {memory_context}
 
 <thinking_style>
@@ -355,7 +357,38 @@ You have access to skills that provide optimized workflows for specific tasks. E
 </skill_system>"""
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3) -> str:
+def _get_task_routing_section(task_type: str | None = None, tool_name: str | None = None) -> str:
+    """Build task routing guidance for explicit tool/task entry points."""
+    if not task_type and not tool_name:
+        return ""
+
+    routing_lines = [
+        "<task_routing>",
+        f"- Requested task_type: {task_type or 'unknown'}",
+        f"- Requested tool_name: {tool_name or 'unknown'}",
+        "- Treat this as an explicit entry routing signal from the frontend.",
+        "- Prioritize the requested task route before generic skill discovery.",
+    ]
+
+    if task_type == "deep_research":
+        routing_lines.extend(
+            [
+                "- Deep research route is active: use multi-round web research before final writing.",
+                "- Prefer authoritative and recent sources, and include citations for key claims.",
+                "- Keep output structure stable: scope, findings, evidence, risks, references.",
+            ]
+        )
+
+    routing_lines.append("</task_routing>")
+    return "\n".join(routing_lines)
+
+
+def apply_prompt_template(
+    subagent_enabled: bool = False,
+    max_concurrent_subagents: int = 3,
+    task_type: str | None = None,
+    tool_name: str | None = None,
+) -> str:
     # Get memory context
     memory_context = _get_memory_context()
 
@@ -383,11 +416,13 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
 
     # Get skills section
     skills_section = get_skills_prompt_section()
+    task_routing_section = _get_task_routing_section(task_type=task_type, tool_name=tool_name)
 
     # Format the prompt with dynamic skills and memory
     prompt = SYSTEM_PROMPT_TEMPLATE.format(
         skills_section=skills_section,
         memory_context=memory_context,
+        task_routing_section=task_routing_section,
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,

@@ -8,6 +8,17 @@ Like the original DeerFlow 1.0, we would love to give the community a minimalist
 - **UI**: [React 19](https://react.dev/), [Tailwind CSS 4](https://tailwindcss.com/), [Shadcn UI](https://ui.shadcn.com/), [MagicUI](https://magicui.design/) and [React Bits](https://reactbits.dev/)
 - **AI Integration**: [LangGraph SDK](https://www.npmjs.com/package/@langchain/langgraph-sdk) and [Vercel AI Elements](https://vercel.com/ai-sdk/ai-elements)
 
+## Tool Entry Routing
+
+The new chat input now uses a single **Tools** selector instead of multiple preset chips.
+When a tool is selected, the frontend sends structured routing metadata with each submit:
+
+- `task_type`
+- `tool_name`
+- `tool_args`
+
+These values are passed through LangGraph `context` so backend routing logic can branch reliably.
+
 ## Quick Start
 
 ### Prerequisites

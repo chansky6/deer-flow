@@ -18,6 +18,13 @@ import type {
   AgentThreadState,
 } from "./types";
 
+type SubmitThreadContext = {
+  model_name: string | undefined;
+  thinking_enabled: boolean;
+  is_plan_mode: boolean;
+  subagent_enabled: boolean;
+};
+
 export function useThreadStream({
   threadId,
   isNewThread,
@@ -89,12 +96,18 @@ export function useSubmitThread({
   isNewThread: boolean;
   threadId: string | null | undefined;
   thread: UseStream<AgentThreadState>;
-  threadContext: Omit<AgentThreadContext, "thread_id">;
+  threadContext: SubmitThreadContext;
   afterSubmit?: () => void;
 }) {
   const queryClient = useQueryClient();
   const callback = useCallback(
-    async (message: PromptInputMessage) => {
+    async (
+      message: PromptInputMessage,
+      contextOverrides?: Pick<
+        AgentThreadContext,
+        "task_type" | "tool_name" | "tool_args"
+      >,
+    ) => {
       const text = message.text.trim();
 
       // Upload files first if any
@@ -151,6 +164,21 @@ export function useSubmitThread({
         }
       }
 
+      if (!threadId) {
+        throw new Error("Thread is not ready for submission.");
+      }
+
+      const runtimeContext: AgentThreadContext = {
+        thread_id: threadId,
+        model_name: threadContext.model_name,
+        thinking_enabled: threadContext.thinking_enabled,
+        is_plan_mode: threadContext.is_plan_mode,
+        subagent_enabled: threadContext.subagent_enabled,
+        task_type: contextOverrides?.task_type,
+        tool_name: contextOverrides?.tool_name,
+        tool_args: contextOverrides?.tool_args,
+      };
+
       await thread.submit(
         {
           messages: [
@@ -173,10 +201,7 @@ export function useSubmitThread({
           config: {
             recursion_limit: 1000,
           },
-          context: {
-            ...threadContext,
-            thread_id: threadId,
-          },
+          context: runtimeContext,
         },
       );
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });

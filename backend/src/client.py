@@ -171,6 +171,8 @@ class DeerFlowClient:
             "thinking_enabled": overrides.get("thinking_enabled", self._thinking_enabled),
             "is_plan_mode": overrides.get("plan_mode", self._plan_mode),
             "subagent_enabled": overrides.get("subagent_enabled", self._subagent_enabled),
+            "task_type": overrides.get("task_type"),
+            "tool_name": overrides.get("tool_name"),
         }
         return RunnableConfig(
             configurable=configurable,
@@ -194,6 +196,8 @@ class DeerFlowClient:
         model_name = cfg.get("model_name")
         subagent_enabled = cfg.get("subagent_enabled", False)
         max_concurrent_subagents = cfg.get("max_concurrent_subagents", 3)
+        task_type = cfg.get("task_type")
+        tool_name = cfg.get("tool_name")
 
         kwargs: dict[str, Any] = {
             "model": create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
@@ -202,6 +206,8 @@ class DeerFlowClient:
             "system_prompt": apply_prompt_template(
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
+                task_type=task_type,
+                tool_name=tool_name,
             ),
             "state_schema": ThreadState,
         }

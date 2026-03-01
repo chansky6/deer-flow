@@ -113,6 +113,8 @@ CI runs these regression tests for every pull request via [.github/workflows/bac
 - `model_name` - Select specific LLM model
 - `is_plan_mode` - Enable TodoList middleware
 - `subagent_enabled` - Enable task delegation tool
+- `task_type` - Frontend-selected task routing hint (e.g. `deep_research`)
+- `tool_name` - Frontend-selected tool routing hint (paired with `task_type`)
 
 ### Middleware Chain
 
