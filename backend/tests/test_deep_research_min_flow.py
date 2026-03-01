@@ -42,9 +42,14 @@ def test_make_lead_agent_uses_deep_research_min_flow_when_enabled(monkeypatch):
         ]
 
     monkeypatch.setattr(tools_module, "get_available_tools", _fake_get_available_tools)
-    monkeypatch.setattr(lead_agent_module, "_build_middlewares", lambda config, model_name: [])
+    captured_workflow_kwargs: dict[str, object] = {}
+
+    def _fake_make_deep_research_workflow(**kwargs):
+        captured_workflow_kwargs.update(kwargs)
+        return {"workflow": "ok"}
+
+    monkeypatch.setattr(lead_agent_module, "make_deep_research_workflow", _fake_make_deep_research_workflow)
     monkeypatch.setattr(lead_agent_module, "create_chat_model", lambda **kwargs: object())
-    monkeypatch.setattr(lead_agent_module, "apply_prompt_template", lambda **kwargs: "BASE_PROMPT")
     monkeypatch.setattr(lead_agent_module, "create_agent", lambda **kwargs: kwargs)
 
     result = lead_agent_module.make_lead_agent(
@@ -61,8 +66,10 @@ def test_make_lead_agent_uses_deep_research_min_flow_when_enabled(monkeypatch):
     )
 
     assert captured_tool_kwargs["subagent_enabled"] is False
-    assert [tool.name for tool in result["tools"]] == ["web_search", "present_files"]
-    assert "<deep_research_min_flow version=\"v1\">" in result["system_prompt"]
+    assert result == {"workflow": "ok"}
+    assert [tool.name for tool in captured_workflow_kwargs["tools"]] == ["web_search", "present_files"]
+    assert captured_workflow_kwargs["model_name"] == "safe-model"
+    assert captured_workflow_kwargs["thinking_enabled"] is True
 
 
 def test_make_lead_agent_falls_back_when_deep_research_min_flow_disabled(monkeypatch):
@@ -101,7 +108,7 @@ def test_make_lead_agent_falls_back_when_deep_research_min_flow_disabled(monkeyp
 
     assert captured_tool_kwargs["subagent_enabled"] is True
     assert [tool.name for tool in result["tools"]] == ["web_search", "present_files", "bash"]
-    assert "<deep_research_min_flow version=\"v1\">" not in result["system_prompt"]
+    assert result["system_prompt"] == "BASE_PROMPT"
 
 
 def test_runtime_options_prefer_context_over_configurable(monkeypatch):
@@ -140,4 +147,3 @@ def test_runtime_options_prefer_context_over_configurable(monkeypatch):
     )
 
     assert captured_model_kwargs["name"] == "context-model"
-

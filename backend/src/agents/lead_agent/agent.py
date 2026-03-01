@@ -18,10 +18,10 @@ from src.agents.thread_state import ThreadState
 from src.config.app_config import get_app_config
 from src.config.summarization_config import get_summarization_config
 from src.deep_research import (
-    build_deep_research_system_prompt,
     filter_deep_research_tools,
     is_deep_research_min_flow_enabled,
     is_deep_research_route,
+    make_deep_research_workflow,
 )
 from src.models import create_chat_model
 from src.sandbox.middleware import SandboxMiddleware
@@ -48,26 +48,6 @@ def _get_runtime_options(config: RunnableConfig) -> dict[str, Any]:
                 merged[key] = value
 
     return merged
-
-
-def _with_runtime_overrides(config: RunnableConfig, **overrides: Any) -> RunnableConfig:
-    """Return a shallow-copied RunnableConfig with runtime overrides applied."""
-    patched_config: RunnableConfig = dict(config)
-
-    configurable = config.get("configurable", {})
-    patched_configurable = dict(configurable) if isinstance(configurable, dict) else {}
-    patched_configurable.update(overrides)
-    patched_config["configurable"] = patched_configurable
-
-    context = config.get("context", {})
-    if isinstance(context, dict):
-        patched_context = dict(context)
-        for key, value in overrides.items():
-            if key in patched_context:
-                patched_context[key] = value
-        patched_config["context"] = patched_context
-
-    return patched_config
 
 
 def _resolve_model_name(requested_model_name: str | None) -> str:
@@ -363,6 +343,16 @@ def make_lead_agent(config: RunnableConfig):
         }
     )
 
+    if deep_research_min_flow_active:
+        deep_research_tools = filter_deep_research_tools(
+            get_available_tools(model_name=model_name, subagent_enabled=False)
+        )
+        return make_deep_research_workflow(
+            model_name=model_name,
+            thinking_enabled=thinking_enabled,
+            tools=deep_research_tools,
+        )
+
     tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled)
     system_prompt = apply_prompt_template(
         subagent_enabled=subagent_enabled,
@@ -371,11 +361,6 @@ def make_lead_agent(config: RunnableConfig):
         tool_name=tool_name,
     )
     middleware_config = config
-
-    if deep_research_min_flow_active:
-        tools = filter_deep_research_tools(tools)
-        system_prompt = build_deep_research_system_prompt(system_prompt)
-        middleware_config = _with_runtime_overrides(config, subagent_enabled=False)
 
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
