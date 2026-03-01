@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import SummarizationMiddleware, TodoListMiddleware
@@ -16,10 +17,57 @@ from src.agents.middlewares.view_image_middleware import ViewImageMiddleware
 from src.agents.thread_state import ThreadState
 from src.config.app_config import get_app_config
 from src.config.summarization_config import get_summarization_config
+from src.deep_research import (
+    build_deep_research_system_prompt,
+    filter_deep_research_tools,
+    is_deep_research_min_flow_enabled,
+    is_deep_research_route,
+)
 from src.models import create_chat_model
 from src.sandbox.middleware import SandboxMiddleware
 
 logger = logging.getLogger(__name__)
+
+
+def _get_runtime_options(config: RunnableConfig) -> dict[str, Any]:
+    """Merge runtime options from context + configurable.
+
+    LangGraph introduced `context` as the long-term replacement for
+    `configurable`; for compatibility, we support both and let context win.
+    """
+    merged: dict[str, Any] = {}
+
+    configurable = config.get("configurable", {})
+    if isinstance(configurable, dict):
+        merged.update(configurable)
+
+    context = config.get("context", {})
+    if isinstance(context, dict):
+        for key, value in context.items():
+            if value is not None:
+                merged[key] = value
+
+    return merged
+
+
+def _with_runtime_overrides(config: RunnableConfig, **overrides: Any) -> RunnableConfig:
+    """Return a shallow-copied RunnableConfig with runtime overrides applied."""
+    patched_config: RunnableConfig = dict(config)
+
+    configurable = config.get("configurable", {})
+    patched_configurable = dict(configurable) if isinstance(configurable, dict) else {}
+    patched_configurable.update(overrides)
+    patched_config["configurable"] = patched_configurable
+
+    context = config.get("context", {})
+    if isinstance(context, dict):
+        patched_context = dict(context)
+        for key, value in overrides.items():
+            if key in patched_context:
+                patched_context[key] = value
+        patched_config["context"] = patched_context
+
+    return patched_config
 
 
 def _resolve_model_name(requested_model_name: str | None) -> str:
@@ -218,6 +266,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None):
     Returns:
         List of middleware instances.
     """
+    runtime_options = _get_runtime_options(config)
     middlewares = [ThreadDataMiddleware(), UploadsMiddleware(), SandboxMiddleware(), DanglingToolCallMiddleware()]
 
     # Add summarization middleware if enabled
@@ -226,7 +275,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None):
         middlewares.append(summarization_middleware)
 
     # Add TodoList middleware if plan mode is enabled
-    is_plan_mode = config.get("configurable", {}).get("is_plan_mode", False)
+    is_plan_mode = runtime_options.get("is_plan_mode", False)
     todo_list_middleware = _create_todo_list_middleware(is_plan_mode)
     if todo_list_middleware is not None:
         middlewares.append(todo_list_middleware)
@@ -245,9 +294,9 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None):
         middlewares.append(ViewImageMiddleware())
 
     # Add SubagentLimitMiddleware to truncate excess parallel task calls
-    subagent_enabled = config.get("configurable", {}).get("subagent_enabled", False)
+    subagent_enabled = runtime_options.get("subagent_enabled", False)
     if subagent_enabled:
-        max_concurrent_subagents = config.get("configurable", {}).get("max_concurrent_subagents", 3)
+        max_concurrent_subagents = runtime_options.get("max_concurrent_subagents", 3)
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
 
     # ClarificationMiddleware should always be last
@@ -259,19 +308,27 @@ def make_lead_agent(config: RunnableConfig):
     # Lazy import to avoid circular dependency
     from src.tools import get_available_tools
 
-    thinking_enabled = config.get("configurable", {}).get("thinking_enabled", True)
-    requested_model_name = config.get("configurable", {}).get("model_name") or config.get("configurable", {}).get("model")
+    runtime_options = _get_runtime_options(config)
+
+    thinking_enabled = runtime_options.get("thinking_enabled", True)
+    requested_model_name = runtime_options.get("model_name") or runtime_options.get("model")
     model_name = _resolve_model_name(requested_model_name)
     if model_name is None:
         raise ValueError(
             "No chat model could be resolved. Please configure at least one model in "
             "config.yaml or provide a valid 'model_name'/'model' in the request."
         )
-    is_plan_mode = config.get("configurable", {}).get("is_plan_mode", False)
-    subagent_enabled = config.get("configurable", {}).get("subagent_enabled", False)
-    max_concurrent_subagents = config.get("configurable", {}).get("max_concurrent_subagents", 3)
-    task_type = config.get("configurable", {}).get("task_type")
-    tool_name = config.get("configurable", {}).get("tool_name")
+    is_plan_mode = runtime_options.get("is_plan_mode", False)
+    subagent_enabled = runtime_options.get("subagent_enabled", False)
+    max_concurrent_subagents = runtime_options.get("max_concurrent_subagents", 3)
+    task_type = runtime_options.get("task_type")
+    tool_name = runtime_options.get("tool_name")
+
+    deep_research_route_active = is_deep_research_route(task_type=task_type, tool_name=tool_name)
+    deep_research_min_flow_active = deep_research_route_active and is_deep_research_min_flow_enabled()
+    if deep_research_min_flow_active and subagent_enabled:
+        logger.info("DeepResearch minimal flow is active; forcing subagent_enabled=False for stability.")
+        subagent_enabled = False
 
     app_config = get_app_config()
     model_config = app_config.get_model_config(model_name) if model_name else None
@@ -280,12 +337,15 @@ def make_lead_agent(config: RunnableConfig):
         thinking_enabled = False
 
     logger.info(
-        "thinking_enabled: %s, model_name: %s, is_plan_mode: %s, subagent_enabled: %s, max_concurrent_subagents: %s",
+        "thinking_enabled: %s, model_name: %s, is_plan_mode: %s, subagent_enabled: %s, max_concurrent_subagents: %s, task_type: %s, tool_name: %s, deep_research_min_flow: %s",
         thinking_enabled,
         model_name,
         is_plan_mode,
         subagent_enabled,
         max_concurrent_subagents,
+        task_type,
+        tool_name,
+        deep_research_min_flow_active,
     )
 
     # Inject run metadata for LangSmith trace tagging
@@ -297,18 +357,30 @@ def make_lead_agent(config: RunnableConfig):
             "thinking_enabled": thinking_enabled,
             "is_plan_mode": is_plan_mode,
             "subagent_enabled": subagent_enabled,
+            "task_type": task_type or "",
+            "tool_name": tool_name or "",
+            "deep_research_min_flow": deep_research_min_flow_active,
         }
     )
 
+    tools = get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled)
+    system_prompt = apply_prompt_template(
+        subagent_enabled=subagent_enabled,
+        max_concurrent_subagents=max_concurrent_subagents,
+        task_type=task_type,
+        tool_name=tool_name,
+    )
+    middleware_config = config
+
+    if deep_research_min_flow_active:
+        tools = filter_deep_research_tools(tools)
+        system_prompt = build_deep_research_system_prompt(system_prompt)
+        middleware_config = _with_runtime_overrides(config, subagent_enabled=False)
+
     return create_agent(
         model=create_chat_model(name=model_name, thinking_enabled=thinking_enabled),
-        tools=get_available_tools(model_name=model_name, subagent_enabled=subagent_enabled),
-        middleware=_build_middlewares(config, model_name=model_name),
-        system_prompt=apply_prompt_template(
-            subagent_enabled=subagent_enabled,
-            max_concurrent_subagents=max_concurrent_subagents,
-            task_type=task_type,
-            tool_name=tool_name,
-        ),
+        tools=tools,
+        middleware=_build_middlewares(middleware_config, model_name=model_name),
+        system_prompt=system_prompt,
         state_schema=ThreadState,
     )

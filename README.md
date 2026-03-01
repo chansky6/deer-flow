@@ -183,6 +183,8 @@ Tools follow the same philosophy. DeerFlow comes with a core toolset — web sea
 
 Frontend tool entry can also pass structured routing hints (`task_type`, `tool_name`, `tool_args`) with each message, so backend orchestration can branch into specialized flows such as deep research more reliably.
 
+For `task_type=deep_research`, DeerFlow includes a minimal stable backend route with a fixed 4-stage flow (plan/retrieve/synthesize/report) and a restricted toolset for better output consistency. It can be rolled back quickly with `DEER_FLOW_ENABLE_DEEP_RESEARCH_MIN_FLOW=false`.
+
 ```
 # Paths inside the sandbox container
 /mnt/skills/public
