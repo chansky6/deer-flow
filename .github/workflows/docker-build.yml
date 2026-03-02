@@ -40,5 +40,5 @@ jobs:
           context: ./web
           push: true
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
           tags: ghcr.io/${{ env.OWNER }}/deer-flow-frontend:latest
