@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 EXPOSE 8000
 
 # Run the application.
-RUN useradd -m appuser
+RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 CMD ["uv", "run", "python", "server.py", "--host", "0.0.0.0", "--port", "8000"]

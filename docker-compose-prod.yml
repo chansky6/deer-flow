@@ -1,10 +1,7 @@
 services:
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/chansky6/deer-flow-backend:latest
     container_name: deer-flow-backend
-    # Remove the ports section to not expose to host
     env_file:
       - .env
     volumes:
@@ -14,11 +11,7 @@ services:
       - deer-flow-network
 
   frontend:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+    image: ghcr.io/chansky6/deer-flow-frontend:latest
     container_name: deer-flow-frontend
     env_file:
       - .env
