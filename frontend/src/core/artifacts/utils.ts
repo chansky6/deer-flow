@@ -8,11 +8,16 @@ export function urlOfArtifact({
   filepath,
   threadId,
   download = false,
+  isMock = false,
 }: {
   filepath: string;
   threadId: string;
   download?: boolean;
+  isMock?: boolean;
 }) {
+  if (isMock) {
+    return `${getBackendBaseURL()}/mock/api/threads/${threadId}/artifacts${filepath}${download ? "?download=true" : ""}`;
+  }
   return `${getBackendBaseURL()}/api/threads/${threadId}/artifacts${filepath}${download ? "?download=true" : ""}`;
 }
 

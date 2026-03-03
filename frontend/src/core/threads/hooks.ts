@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
 import { getAPIClient } from "../api";
+import type { LocalSettings } from "../settings";
 import { useUpdateSubtask } from "../tasks/context";
 import { uploadFiles } from "../uploads";
 
@@ -19,6 +20,20 @@ import type {
   FrameworkReviewDraftStartedEvent,
   StreamingFrameworkReviewMeta,
 } from "./types";
+
+export type ToolEndEvent = {
+  name: string;
+  data: unknown;
+};
+
+export type ThreadStreamOptions = {
+  threadId?: string | null | undefined;
+  context: LocalSettings["context"];
+  isMock?: boolean;
+  onStart?: (threadId: string) => void;
+  onFinish?: (state: AgentThreadState) => void;
+  onToolEnd?: (event: ToolEndEvent) => void;
+};
 
 export type UseThreadStreamResult = UseStream<AgentThreadState> & {
   streamingFrameworkReview: StreamingFrameworkReviewMeta | null;
@@ -70,22 +85,20 @@ async function submitThreadTextMessage({
   );
 }
 
-
 export function useThreadStream({
   threadId,
-  isNewThread,
+  context,
+  isMock,
+  onStart,
   onFinish,
-}: {
-  isNewThread: boolean;
-  threadId: string | null | undefined;
-  onFinish?: (state: AgentThreadState) => void;
-}) {
+  onToolEnd,
+}: ThreadStreamOptions) {
+  const [_threadId, setThreadId] = useState<string | null>(threadId ?? null);
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
   const [streamingFrameworkReview, setStreamingFrameworkReview] =
     useState<StreamingFrameworkReviewMeta | null>(null);
 
-  // Demo thread IDs from showcase
   const DEMO_THREAD_IDS = [
     "7cfa5f8f-a2f8-47ad-acbd-da7137baf990",
     "4f3e55ee-f853-43db-bfb3-7d1a411f03cb",
@@ -95,7 +108,7 @@ export function useThreadStream({
     "3823e443-4e2b-4679-b496-a9506eae462b",
   ];
 
-  const isDemoThread = threadId && DEMO_THREAD_IDS.includes(threadId);
+  const isDemoThread = Boolean(threadId && DEMO_THREAD_IDS.includes(threadId));
   const [demoState, setDemoState] = useState<AgentThreadState | null>(null);
 
   useEffect(() => {
@@ -113,13 +126,24 @@ export function useThreadStream({
   }, [isDemoThread, threadId, onFinish]);
 
   const thread = useStream<AgentThreadState>({
-    client: getAPIClient(),
+    client: getAPIClient(isMock),
     assistantId: "lead_agent",
-    threadId: isDemoThread ? undefined : (isNewThread ? undefined : threadId),
+    threadId: isDemoThread ? undefined : _threadId,
     reconnectOnMount: !isDemoThread,
     fetchStateHistory: isDemoThread ? false : { limit: 1 },
+    onCreated(meta) {
+      setThreadId(meta.thread_id);
+      onStart?.(meta.thread_id);
+    },
+    onLangChainEvent(event) {
+      if (event.event === "on_tool_end") {
+        onToolEnd?.({
+          name: event.name,
+          data: event.data,
+        });
+      }
+    },
     onCustomEvent(event: unknown) {
-      console.info(event);
       if (
         typeof event === "object" &&
         event !== null &&
@@ -153,7 +177,6 @@ export function useThreadStream({
     onFinish(state) {
       setStreamingFrameworkReview(null);
       onFinish?.(state.values);
-      // void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
       queryClient.setQueriesData(
         {
           queryKey: ["threads", "search"],
@@ -161,7 +184,7 @@ export function useThreadStream({
         },
         (oldData: Array<AgentThread>) => {
           return oldData.map((t) => {
-            if (t.thread_id === threadId) {
+            if (t.thread_id === (_threadId ?? threadId)) {
               return {
                 ...t,
                 values: {
@@ -177,21 +200,99 @@ export function useThreadStream({
     },
   });
 
-  // Return demo state if available
-  if (demoState) {
-    return Object.assign(thread, {
-      streamingFrameworkReview: null,
-      values: demoState,
-      messages: demoState.messages || [],
-      isLoading: false,
-      isThreadLoading: false,
-      history: [],
-    });
-  }
-
-  return Object.assign(thread, {
+  const threadWithMeta = Object.assign(thread, {
     streamingFrameworkReview,
-  });
+  }) as UseThreadStreamResult;
+
+  const resultThread = demoState
+    ? (Object.assign(thread, {
+        streamingFrameworkReview: null,
+        values: demoState,
+        messages: demoState.messages || [],
+        isLoading: false,
+        isThreadLoading: false,
+        history: [],
+      }) as UseThreadStreamResult)
+    : threadWithMeta;
+
+  const sendMessage = useCallback(
+    async (
+      targetThreadId: string,
+      message: PromptInputMessage,
+      extraContext?: Record<string, unknown>,
+    ) => {
+      const text = message.text.trim();
+
+      if (message.files && message.files.length > 0) {
+        try {
+          const filePromises = message.files.map(async (fileUIPart) => {
+            if (fileUIPart.url && fileUIPart.filename) {
+              try {
+                const response = await fetch(fileUIPart.url);
+                const blob = await response.blob();
+
+                return new File([blob], fileUIPart.filename, {
+                  type: fileUIPart.mediaType || blob.type,
+                });
+              } catch (error) {
+                console.error(
+                  `Failed to fetch file ${fileUIPart.filename}:`,
+                  error,
+                );
+                return null;
+              }
+            }
+            return null;
+          });
+
+          const conversionResults = await Promise.all(filePromises);
+          const files = conversionResults.filter(
+            (file): file is File => file !== null,
+          );
+          const failedConversions = conversionResults.length - files.length;
+
+          if (failedConversions > 0) {
+            throw new Error(
+              `Failed to prepare ${failedConversions} attachment(s) for upload. Please retry.`,
+            );
+          }
+
+          if (!targetThreadId) {
+            throw new Error("Thread is not ready for file upload.");
+          }
+
+          if (files.length > 0) {
+            await uploadFiles(targetThreadId, files);
+          }
+        } catch (error) {
+          console.error("Failed to upload files:", error);
+          const errorMessage =
+            error instanceof Error ? error.message : "Failed to upload files.";
+          toast.error(errorMessage);
+          throw error;
+        }
+      }
+
+      await submitThreadTextMessage({
+        thread,
+        text,
+        threadId: targetThreadId,
+        submitThreadId: _threadId ?? targetThreadId,
+        threadContext: {
+          ...extraContext,
+          ...context,
+          thinking_enabled: context.mode !== "flash",
+          is_plan_mode: context.mode === "pro" || context.mode === "ultra",
+          subagent_enabled: context.mode === "ultra",
+          reasoning_effort: context.reasoning_effort,
+        },
+      });
+      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+    },
+    [thread, _threadId, context, queryClient],
+  );
+
+  return [resultThread, sendMessage] as const;
 }
 
 export function useSubmitThread({
@@ -212,18 +313,14 @@ export function useSubmitThread({
     async (message: PromptInputMessage) => {
       const text = message.text.trim();
 
-      // Upload files first if any
       if (message.files && message.files.length > 0) {
         try {
-          // Convert FileUIPart to File objects by fetching blob URLs
           const filePromises = message.files.map(async (fileUIPart) => {
             if (fileUIPart.url && fileUIPart.filename) {
               try {
-                // Fetch the blob URL to get the file data
                 const response = await fetch(fileUIPart.url);
                 const blob = await response.blob();
 
-                // Create a File object from the blob
                 return new File([blob], fileUIPart.filename, {
                   type: fileUIPart.mediaType || blob.type,
                 });
@@ -360,7 +457,6 @@ export function useRenameThread() {
     },
   });
 }
-
 
 export function useConfirmFrameworkReview({
   threadId,

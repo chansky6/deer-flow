@@ -49,6 +49,7 @@ import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
 import { CitationLink } from "../citations/citation-link";
+import { useThread } from "../messages/context";
 import { Tooltip } from "../tooltip";
 
 import { useArtifacts } from "./context";
@@ -89,7 +90,7 @@ export function ArtifactFileDetail({
     }
     return checkCodeFile(filepath);
   }, [filepath, isWriteFile, isSkillFile]);
-  const previewable = useMemo(() => {
+  const isSupportPreview = useMemo(() => {
     return (language === "html" && !isWriteFile) || language === "markdown";
   }, [isWriteFile, language]);
   const exportable = useMemo(() => {
@@ -115,14 +116,14 @@ export function ArtifactFileDetail({
   const [isInstalling, setIsInstalling] = useState(false);
   const [downloadingFormat, setDownloadingFormat] =
     useState<ArtifactDownloadFormat | null>(null);
-
+  const { isMock } = useThread();
   useEffect(() => {
-    if (previewable) {
+    if (isSupportPreview) {
       setViewMode("preview");
     } else {
       setViewMode("code");
     }
-  }, [previewable]);
+  }, [isSupportPreview]);
 
   const handleInstallSkill = useCallback(async () => {
     if (isInstalling) return;
@@ -188,16 +189,18 @@ export function ArtifactFileDetail({
           </ArtifactTitle>
         </div>
         <div className="flex min-w-0 grow items-center justify-center">
-          {previewable && (
+          {isSupportPreview && (
             <ToggleGroup
               className="mx-auto"
               type="single"
               variant="outline"
               size="sm"
               value={viewMode}
-              onValueChange={(value) =>
-                setViewMode(value as "code" | "preview")
-              }
+              onValueChange={(value) => {
+                if (value) {
+                  setViewMode(value as "code" | "preview");
+                }
+              }}
             >
               <ToggleGroupItem value="code">
                 <Code2Icon />
@@ -225,7 +228,7 @@ export function ArtifactFileDetail({
               </Tooltip>
             )}
             {!isWriteFile && (
-              <a href={urlOfArtifact({ filepath, threadId })} target="_blank">
+              <a href={urlOfArtifact({ filepath, threadId, isMock })} target="_blank">
                 <ArtifactAction
                   icon={SquareArrowOutUpRightIcon}
                   label={t.common.openInNewWindow}
@@ -298,7 +301,7 @@ export function ArtifactFileDetail({
                 </DropdownMenu>
               ) : (
                 <a
-                  href={urlOfArtifact({ filepath, threadId, download: true })}
+                  href={urlOfArtifact({ filepath, threadId, download: true, isMock })}
                   target="_blank"
                 >
                   <ArtifactAction
@@ -318,7 +321,7 @@ export function ArtifactFileDetail({
         </div>
       </ArtifactHeader>
       <ArtifactContent className="p-0">
-        {previewable &&
+        {isSupportPreview &&
           viewMode === "preview" &&
           (language === "markdown" || language === "html") && (
             <ArtifactFilePreview
@@ -338,7 +341,7 @@ export function ArtifactFileDetail({
         {!isCodeFile && (
           <iframe
             className="size-full"
-            src={urlOfArtifact({ filepath, threadId })}
+            src={urlOfArtifact({ filepath, threadId, isMock })}
           />
         )}
       </ArtifactContent>
@@ -357,6 +360,7 @@ export function ArtifactFilePreview({
   content: string;
   language: string;
 }) {
+  const { isMock } = useThread();
   if (language === "markdown") {
     return (
       <div className="size-full px-4">
@@ -374,7 +378,7 @@ export function ArtifactFilePreview({
     return (
       <iframe
         className="size-full"
-        src={urlOfArtifact({ filepath, threadId })}
+        src={urlOfArtifact({ filepath, threadId, isMock })}
       />
     );
   }

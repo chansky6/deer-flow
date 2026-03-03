@@ -1,5 +1,4 @@
-import { type BaseMessage } from "@langchain/core/messages";
-import type { Thread } from "@langchain/langgraph-sdk";
+import type { Message, Thread } from "@langchain/langgraph-sdk";
 
 import type { Todo } from "../todos";
 
@@ -38,7 +37,7 @@ export interface ConfirmedAnalysisFrameworkState {
 
 export interface AgentThreadState extends Record<string, unknown> {
   title: string;
-  messages: BaseMessage[];
+  messages: Message[];
   artifacts: string[];
   todos?: Todo[];
   framework_review?: FrameworkReviewState | null;
@@ -54,4 +53,5 @@ export interface AgentThreadContext extends Record<string, unknown> {
   is_plan_mode: boolean;
   subagent_enabled: boolean;
   reasoning_effort?: "minimal" | "low" | "medium" | "high";
+  agent_name?: string;
 }

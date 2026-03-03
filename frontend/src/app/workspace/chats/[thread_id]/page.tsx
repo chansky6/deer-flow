@@ -1,30 +1,20 @@
 "use client";
 
 import type { Message } from "@langchain/langgraph-sdk";
-import { FilesIcon, XIcon } from "lucide-react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ConversationEmptyState } from "@/components/ai-elements/conversation";
-import { usePromptInputController } from "@/components/ai-elements/prompt-input";
-import { Button } from "@/components/ui/button";
+import { type PromptInputMessage } from "@/components/ai-elements/prompt-input";
+import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import { useSidebar } from "@/components/ui/sidebar";
-import {
-  ArtifactFileDetail,
-  ArtifactFileList,
-  useArtifacts,
-} from "@/components/workspace/artifacts";
+  ChatBox,
+  useSpecificChatMode,
+  useThreadChat,
+} from "@/components/workspace/chats";
 import { InputBox } from "@/components/workspace/input-box";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
-import { Tooltip } from "@/components/workspace/tooltip";
 import { Welcome } from "@/components/workspace/welcome";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -39,16 +29,10 @@ import {
   type StreamingFrameworkReviewState,
 } from "@/core/threads";
 import {
-  type UseThreadStreamResult,
   useConfirmFrameworkReview,
-  useSubmitThread,
   useThreadStream,
 } from "@/core/threads/hooks";
-import {
-  pathOfThread,
-  textOfMessage,
-} from "@/core/threads/utils";
-import { uuid } from "@/core/utils/uuid";
+import { pathOfThread, textOfMessage } from "@/core/threads/utils";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
 
@@ -161,63 +145,26 @@ function findFrameworkReviewDraftMessageId({
 
 export default function ChatPage() {
   const { t } = useI18n();
-  const router = useRouter();
   const [settings, setSettings] = useLocalSettings();
-  const { setOpen: setSidebarOpen } = useSidebar();
-  const {
-    artifacts,
-    open: artifactsOpen,
-    autoOpen: artifactsAutoOpen,
-    autoSelect: artifactsAutoSelect,
-    setOpen: setArtifactsOpen,
-    setArtifacts,
-    select: selectArtifact,
-    selectedArtifact,
-  } = useArtifacts();
-  const { thread_id: threadIdFromPath } = useParams<{ thread_id: string }>();
-  const searchParams = useSearchParams();
-  const promptInputController = usePromptInputController();
-  const inputInitialValue = useMemo(() => {
-    if (threadIdFromPath !== "new" || searchParams.get("mode") !== "skill") {
-      return undefined;
-    }
-    return t.inputBox.createSkillPrompt;
-  }, [threadIdFromPath, searchParams, t.inputBox.createSkillPrompt]);
-  const lastInitialValueRef = useRef<string | undefined>(undefined);
-  const setInputRef = useRef(promptInputController.textInput.setInput);
-  setInputRef.current = promptInputController.textInput.setInput;
-  useEffect(() => {
-    if (inputInitialValue && inputInitialValue !== lastInitialValueRef.current) {
-      lastInitialValueRef.current = inputInitialValue;
-      setTimeout(() => {
-        setInputRef.current(inputInitialValue);
-        const textarea = document.querySelector("textarea");
-        if (textarea) {
-          textarea.focus();
-          textarea.selectionStart = textarea.value.length;
-          textarea.selectionEnd = textarea.value.length;
-        }
-      }, 100);
-    }
-  }, [inputInitialValue]);
-  const isNewThread = useMemo(
-    () => threadIdFromPath === "new",
-    [threadIdFromPath],
+
+  const { threadId, isNewThread, setIsNewThread, isMock } = useThreadChat();
+  useSpecificChatMode();
+
+  const threadPath = useCallback(
+    (id: string) => `${pathOfThread(id)}${isMock ? "?mock=true" : ""}`,
+    [isMock],
   );
-  const [threadId, setThreadId] = useState<string | null>(null);
-  useEffect(() => {
-    if (threadIdFromPath !== "new") {
-      setThreadId(threadIdFromPath);
-    } else {
-      setThreadId(uuid());
-    }
-  }, [threadIdFromPath]);
 
   const { showNotification } = useNotification();
   const [finalState, setFinalState] = useState<AgentThreadState | null>(null);
-  const thread = useThreadStream({
-    isNewThread,
-    threadId,
+  const [thread, sendMessage] = useThreadStream({
+    threadId: isNewThread ? undefined : threadId,
+    context: settings.context,
+    isMock,
+    onStart: (createdThreadId) => {
+      setIsNewThread(false);
+      history.replaceState(null, "", threadPath(createdThreadId));
+    },
     onFinish: (state) => {
       setFinalState(state);
       if (document.hidden || !document.hasFocus()) {
@@ -226,97 +173,22 @@ export default function ChatPage() {
         if (lastMessage) {
           const textContent = textOfMessage(lastMessage);
           if (textContent) {
-            if (textContent.length > 200) {
-              body = textContent.substring(0, 200) + "...";
-            } else {
-              body = textContent;
-            }
+            body =
+              textContent.length > 200
+                ? textContent.substring(0, 200) + "..."
+                : textContent;
           }
         }
-        showNotification(state.title, {
-          body,
-        });
+        showNotification(state.title, { body });
       }
     },
-  }) as UseThreadStreamResult;
+  });
+
   useEffect(() => {
-    if (thread.isLoading) setFinalState(null);
+    if (thread.isLoading) {
+      setFinalState(null);
+    }
   }, [thread.isLoading]);
-
-  const title = thread.values?.title ?? "Untitled";
-  useEffect(() => {
-    const pageTitle = isNewThread
-      ? t.pages.newChat
-      : thread.isThreadLoading
-        ? "Loading..."
-        : title === "Untitled" ? t.pages.untitled : title;
-    document.title = `${pageTitle} - ${t.pages.appName}`;
-  }, [
-    isNewThread,
-    t.pages.newChat,
-    t.pages.untitled,
-    t.pages.appName,
-    title,
-    thread.isThreadLoading,
-  ]);
-
-  const [autoSelectFirstArtifact, setAutoSelectFirstArtifact] = useState(true);
-  const previousArtifactCountRef = useRef<number | null>(null);
-  useEffect(() => {
-    const nextArtifacts = thread.values.artifacts ?? [];
-    const artifactsChanged =
-      artifacts.length !== nextArtifacts.length ||
-      artifacts.some((artifact, index) => artifact !== nextArtifacts[index]);
-
-    if (artifactsChanged) {
-      setArtifacts(nextArtifacts);
-    }
-
-    if (previousArtifactCountRef.current === null) {
-      previousArtifactCountRef.current = nextArtifacts.length;
-    } else if (
-      env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" &&
-      nextArtifacts.length > previousArtifactCountRef.current &&
-      artifactsAutoOpen &&
-      artifactsAutoSelect
-    ) {
-      const latestArtifact = nextArtifacts.at(-1);
-      if (latestArtifact && latestArtifact !== selectedArtifact) {
-        selectArtifact(latestArtifact, true);
-        setArtifactsOpen(true);
-      }
-      previousArtifactCountRef.current = nextArtifacts.length;
-    } else {
-      previousArtifactCountRef.current = nextArtifacts.length;
-    }
-
-    if (
-      env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" &&
-      autoSelectFirstArtifact
-    ) {
-      if (nextArtifacts.length > 0 && nextArtifacts[0] !== selectedArtifact) {
-        setAutoSelectFirstArtifact(false);
-        selectArtifact(nextArtifacts[0]!);
-      }
-    }
-  }, [
-    artifacts,
-    artifactsAutoOpen,
-    artifactsAutoSelect,
-    autoSelectFirstArtifact,
-    selectArtifact,
-    selectedArtifact,
-    setArtifacts,
-    setArtifactsOpen,
-    thread.values.artifacts,
-  ]);
-
-  const artifactPanelOpen = useMemo(() => {
-    if (env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true") {
-      return artifactsOpen && artifacts?.length > 0;
-    }
-    return artifactsOpen;
-  }, [artifactsOpen, artifacts]);
 
   const [todoListCollapsed, setTodoListCollapsed] = useState(true);
   const [dismissedFrameworkReviewId, setDismissedFrameworkReviewId] =
@@ -436,22 +308,12 @@ export default function ChatPage() {
     }
   }, [thread.values.confirmed_analysis_framework?.markdown]);
 
-  const handleSubmit = useSubmitThread({
-    isNewThread,
-    threadId,
-    thread,
-    threadContext: {
-      ...settings.context,
-      thinking_enabled: settings.context.mode !== "flash",
-      is_plan_mode:
-        settings.context.mode === "pro" || settings.context.mode === "ultra",
-      subagent_enabled: settings.context.mode === "ultra",
-      reasoning_effort: settings.context.reasoning_effort,
+  const handleSubmit = useCallback(
+    (message: PromptInputMessage) => {
+      void sendMessage(threadId, message);
     },
-    afterSubmit() {
-      router.push(pathOfThread(threadId!));
-    },
-  });
+    [sendMessage, threadId],
+  );
   const {
     mutateAsync: confirmFrameworkReview,
     isPending: isConfirmingFrameworkReview,
@@ -471,7 +333,7 @@ export default function ChatPage() {
     confirmErrorMessage: t.frameworkReview.confirmError,
     autoContinueErrorMessage: t.frameworkReview.autoContinueError,
     afterSubmit() {
-      router.push(pathOfThread(threadId!));
+      history.replaceState(null, "", threadPath(threadId));
     },
   });
   const handleConfirmFrameworkReview = useCallback(
@@ -493,189 +355,99 @@ export default function ChatPage() {
     await thread.stop();
   }, [thread]);
 
-  if (!threadId) {
-    return null;
-  }
-
   return (
-    <ThreadContext.Provider value={{ threadId, thread }}>
-      <ResizablePanelGroup orientation="horizontal">
-        <ResizablePanel
-          className="relative"
-          defaultSize={artifactPanelOpen ? 46 : 100}
-          minSize={artifactPanelOpen ? 30 : 100}
-        >
-          <div className="relative flex size-full min-h-0 justify-between">
-            <header
-              className={cn(
-                "absolute top-0 right-0 left-0 z-30 flex h-12 shrink-0 items-center px-4",
-                isNewThread
-                  ? "bg-background/0 backdrop-blur-none"
-                  : "bg-background/80 shadow-xs backdrop-blur",
-              )}
-            >
-              <div className="flex w-full items-center text-sm font-medium">
-                {title !== "Untitled" && (
-                  <ThreadTitle threadId={threadId} threadTitle={title} />
-                )}
-              </div>
-              <div>
-                {artifacts?.length > 0 && !artifactsOpen && (
-                  <Tooltip content="Show artifacts of this conversation">
-                    <Button
-                      className="text-muted-foreground hover:text-foreground"
-                      variant="ghost"
-                      onClick={() => {
-                        setArtifactsOpen(true);
-                        setSidebarOpen(false);
-                      }}
-                    >
-                      <FilesIcon />
-                      {t.common.artifacts}
-                    </Button>
-                  </Tooltip>
-                )}
-              </div>
-            </header>
-            <main className="flex min-h-0 max-w-full grow flex-col">
-              <div className="flex size-full justify-center">
-                <MessageList
-                  className={cn("size-full", !isNewThread && "pt-10")}
-                  threadId={threadId}
-                  thread={thread}
-                  messages={visibleMessages}
-                  frameworkReviewInsertionMessageId={frameworkReviewAnchorMessageId}
-                  paddingBottom={todoListCollapsed ? 160 : 280}
-                  streamingFrameworkReview={streamingFrameworkReview}
-                  frameworkReview={activeFrameworkReview}
-                  confirmedFrameworkMarkdown={confirmedFrameworkMarkdown}
-                  isFrameworkReviewLocked={isFrameworkReviewLocked}
-                  isConfirmingFrameworkReview={isConfirmingFrameworkReview}
-                  onConfirmFrameworkReview={handleConfirmFrameworkReview}
-                />
-              </div>
-              <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
-                <div
-                  className={cn(
-                    "relative w-full",
-                    isNewThread && "-translate-y-[calc(50vh-96px)]",
-                    isNewThread
-                      ? "max-w-(--container-width-sm)"
-                      : "max-w-(--container-width-md)",
-                  )}
-                >
-                  <div className="absolute -top-4 right-0 left-0 z-0">
-                    <div className="absolute right-0 bottom-0 left-0">
-                      <TodoList
-                        className="bg-background/5"
-                        todos={thread.values.todos ?? []}
-                        collapsed={todoListCollapsed}
-                        hidden={
-                          !thread.values.todos ||
-                          thread.values.todos.length === 0
-                        }
-                        onToggle={() =>
-                          setTodoListCollapsed(!todoListCollapsed)
-                        }
-                      />
-                    </div>
-                  </div>
-                  <InputBox
-                    className={cn("bg-background/5 w-full -translate-y-4")}
-                    isNewThread={isNewThread}
-                    autoFocus={isNewThread}
-                    status={thread.isLoading ? "streaming" : "ready"}
-                    context={settings.context}
-                    extraHeader={
-                      isNewThread && <Welcome mode={settings.context.mode} />
-                    }
-                    disabled={env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || isFrameworkReviewPending}
-                    onContextChange={(context) =>
-                      setSettings("context", context)
-                    }
-                    onSubmit={handleSubmit}
-                    onStop={handleStop}
-                  />
-                  {isFrameworkReviewPending && (
-                    <div className="text-muted-foreground/80 w-full translate-y-12 text-center text-xs">
-                      {t.frameworkReview.completeReviewFirst}
-                    </div>
-                  )}
-                  {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" && (
-                    <div className="text-muted-foreground/67 w-full translate-y-12 text-center text-xs">
-                      {t.common.notAvailableInDemoMode}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </main>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle
-          className={cn(
-            "opacity-33 hover:opacity-100",
-            !artifactPanelOpen && "pointer-events-none opacity-0",
-          )}
-        />
-        <ResizablePanel
-          className={cn(
-            "transition-all duration-300 ease-in-out",
-            !artifactsOpen && "opacity-0",
-          )}
-          defaultSize={artifactPanelOpen ? 64 : 0}
-          minSize={0}
-          maxSize={artifactPanelOpen ? undefined : 0}
-        >
-          <div
+    <ThreadContext.Provider value={{ thread, isMock }}>
+      <ChatBox threadId={threadId}>
+        <div className="relative flex size-full min-h-0 justify-between">
+          <header
             className={cn(
-              "h-full p-4 transition-transform duration-300 ease-in-out",
-              artifactPanelOpen ? "translate-x-0" : "translate-x-full",
+              "absolute top-0 right-0 left-0 z-30 flex h-12 shrink-0 items-center px-4",
+              isNewThread
+                ? "bg-background/0 backdrop-blur-none"
+                : "bg-background/80 shadow-xs backdrop-blur",
             )}
           >
-            {selectedArtifact ? (
-              <ArtifactFileDetail
-                className="size-full"
-                filepath={selectedArtifact}
+            <div className="flex w-full items-center text-sm font-medium">
+              <ThreadTitle threadId={threadId} thread={thread} />
+            </div>
+            <div>
+              <ArtifactTrigger />
+            </div>
+          </header>
+          <main className="flex min-h-0 max-w-full grow flex-col">
+            <div className="flex size-full justify-center">
+              <MessageList
+                className={cn("size-full", !isNewThread && "pt-10")}
                 threadId={threadId}
+                thread={thread}
+                messages={visibleMessages}
+                frameworkReviewInsertionMessageId={frameworkReviewAnchorMessageId}
+                paddingBottom={todoListCollapsed ? 160 : 280}
+                streamingFrameworkReview={streamingFrameworkReview}
+                frameworkReview={activeFrameworkReview}
+                confirmedFrameworkMarkdown={confirmedFrameworkMarkdown}
+                isFrameworkReviewLocked={isFrameworkReviewLocked}
+                isConfirmingFrameworkReview={isConfirmingFrameworkReview}
+                onConfirmFrameworkReview={handleConfirmFrameworkReview}
               />
-            ) : (
-              <div className="relative flex size-full justify-center">
-                <div className="absolute top-1 right-1 z-30">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setArtifactsOpen(false);
-                    }}
-                  >
-                    <XIcon />
-                  </Button>
+            </div>
+            <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
+              <div
+                className={cn(
+                  "relative w-full",
+                  isNewThread && "-translate-y-[calc(50vh-96px)]",
+                  isNewThread
+                    ? "max-w-(--container-width-sm)"
+                    : "max-w-(--container-width-md)",
+                )}
+              >
+                <div className="absolute -top-4 right-0 left-0 z-0">
+                  <div className="absolute right-0 bottom-0 left-0">
+                    <TodoList
+                      className="bg-background/5"
+                      todos={thread.values.todos ?? []}
+                      collapsed={todoListCollapsed}
+                      hidden={
+                        !thread.values.todos || thread.values.todos.length === 0
+                      }
+                      onToggle={() =>
+                        setTodoListCollapsed(!todoListCollapsed)
+                      }
+                    />
+                  </div>
                 </div>
-                {thread.values.artifacts?.length === 0 ? (
-                  <ConversationEmptyState
-                    icon={<FilesIcon />}
-                    title="No artifact selected"
-                    description="Select an artifact to view its details"
-                  />
-                ) : (
-                  <div className="flex size-full max-w-(--container-width-sm) flex-col justify-center p-4 pt-8">
-                    <header className="shrink-0">
-                      <h2 className="text-lg font-medium">Artifacts</h2>
-                    </header>
-                    <main className="min-h-0 grow">
-                      <ArtifactFileList
-                        className="max-w-(--container-width-sm) p-4 pt-12"
-                        files={thread.values.artifacts ?? []}
-                        threadId={threadId}
-                      />
-                    </main>
+                <InputBox
+                  className={cn("bg-background/5 w-full -translate-y-4")}
+                  isNewThread={isNewThread}
+                  autoFocus={isNewThread}
+                  status={thread.isLoading ? "streaming" : "ready"}
+                  context={settings.context}
+                  extraHeader={
+                    isNewThread && <Welcome mode={settings.context.mode} />
+                  }
+                  disabled={
+                    env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" ||
+                    isFrameworkReviewPending
+                  }
+                  onContextChange={(context) => setSettings("context", context)}
+                  onSubmit={handleSubmit}
+                  onStop={handleStop}
+                />
+                {isFrameworkReviewPending && (
+                  <div className="text-muted-foreground/80 w-full translate-y-12 text-center text-xs">
+                    {t.frameworkReview.completeReviewFirst}
+                  </div>
+                )}
+                {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" && (
+                  <div className="text-muted-foreground/67 w-full translate-y-12 text-center text-xs">
+                    {t.common.notAvailableInDemoMode}
                   </div>
                 )}
               </div>
-            )}
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+            </div>
+          </main>
+        </div>
+      </ChatBox>
     </ThreadContext.Provider>
   );
 }

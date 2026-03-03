@@ -1,5 +1,5 @@
 import type { Message } from "@langchain/langgraph-sdk";
-import type { UseStream } from "@langchain/langgraph-sdk/react";
+import type { BaseStream } from "@langchain/langgraph-sdk/react";
 
 import {
   Conversation,
@@ -51,8 +51,8 @@ export function MessageList({
 }: {
   className?: string;
   threadId: string;
-  thread: UseStream<AgentThreadState>;
-  messages: Message[];
+  thread: BaseStream<AgentThreadState>;
+  messages?: Message[];
   frameworkReviewInsertionMessageId?: string;
   paddingBottom?: number;
   streamingFrameworkReview?: StreamingFrameworkReviewState | null;
@@ -65,6 +65,7 @@ export function MessageList({
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
   const updateSubtask = useUpdateSubtask();
+  const allMessages = messages ?? thread.messages;
 
   const renderMessageGroups = (groupedMessages: Message[]) =>
     groupMessages(groupedMessages, (group) => {
@@ -244,20 +245,20 @@ export function MessageList({
     ) : null;
 
   const frameworkReviewInsertionIndex = frameworkReviewInsertionMessageId
-    ? messages.findIndex(
+    ? allMessages.findIndex(
         (message) => message.id === frameworkReviewInsertionMessageId,
       )
     : -1;
   const messagesBeforeFrameworkReview =
     frameworkReviewInsertionIndex >= 0
-      ? messages.slice(0, frameworkReviewInsertionIndex + 1)
-      : messages;
+      ? allMessages.slice(0, frameworkReviewInsertionIndex + 1)
+      : allMessages;
   const messagesAfterFrameworkReview =
     frameworkReviewInsertionIndex >= 0
-      ? messages.slice(frameworkReviewInsertionIndex + 1)
+      ? allMessages.slice(frameworkReviewInsertionIndex + 1)
       : [];
 
-  if (thread.isThreadLoading) {
+  if (thread.isThreadLoading && allMessages.length === 0) {
     return <MessageListSkeleton />;
   }
   return (
