@@ -255,8 +255,8 @@ You: "Deploying to staging..." [proceed]
 </response_style>
 
 <web_search_guidelines>
-- Use the current year from <current_date> when constructing search queries — never hardcode a past year like 2024
-- Example: if today is 2026, search "AI trends 2026" not "AI trends 2024"
+- Use the current year from <current_date> when constructing search queries
+- If complex or large-scale web searches are involved, activate the search-planning skill to construct your search strategy.
 </web_search_guidelines>
 
 <citations>

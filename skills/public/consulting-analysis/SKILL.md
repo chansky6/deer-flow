@@ -1,6 +1,6 @@
 ---
 name: consulting-analysis
-description: Use this skill when the user requests to generate, create, or write professional research reports including but not limited to market analysis, consumer insights, brand analysis, financial analysis, industry research, competitive intelligence, investment due diligence, or any consulting-grade analytical report. This skill operates in two phases — (1) generating a structured analysis framework with chapter skeleton, data query requirements, and analysis logic, and (2) after data collection by other skills, producing the final consulting-grade report with structured narratives, embedded charts, and strategic insights.
+description: Use this skill when the user requests to generate, create, or write professional research reports including but not limited to market analysis, consumer insights, brand analysis, financial analysis, industry research, competitive intelligence, investment due diligence, or any consulting-grade analytical report.
 ---
 
 # Professional Research Report Skill
@@ -466,8 +466,9 @@ Every insight must connect **Data → User Psychology → Strategy Implication**
 ```
 
 ### References
-- **Inline**: Use markdown links for sources (e.g. `[Source Title](URL)`) when using External Search Findings
+- **Inline**: Use markdown links for sources (e.g. `[[citation:TITLE]](URL)`) when using External Search Findings
 - **References section**: Formatted strictly per **GB/T 7714-2015**
+- **Cross-referencing**: The title of in-text citations **must precisely match** the title in the final section list. Whenever references are added, removed, or modified, the citation title in both the inline citations and the final reference section must be refreshed to maintain consistency.
 
 ### Markdown Rules
 - **Immediate Start**: Begin directly with `# Report Title` — no introductory text
@@ -477,6 +478,12 @@ Every insight must connect **Data → User Psychology → Strategy Implication**
 
 ```markdown
 # [Report Title]
+
+## Data Source Statement For The Report
+[Summarize Citation Data with Numbers]
+| Source Type | Number of Distinct Sources | Percentage | Examples |
+|--------|---------|--------|--------|
+| ... | ... | ... | ... |
 
 ## Abstract
 [Executive summary with key takeaways]
@@ -520,6 +527,18 @@ User provides: Research subject "Gen-Z Skincare Market Analysis"
 
 ```markdown
 # Gen-Z Skincare Market Analysis Framework
+
+## Data Source Statement For The Report
+> This report contains 84 citations (from 52 distinct sources), of which 74 citations are from authoritative reports (accounting for 88.1%).
+| Source Type | Number of Distinct Sources | Percentage | Examples |
+|--------|---------|--------|--------|
+| Government Agencies | 8 | 15.4% | NDRC, MIIT, NBS, EPA, DOE, CNIPA, SAMR, CAC |
+| International Organizations | 13 | 25.0% | UN, World Bank, IMF, IEA, IRENA, OECD, WTO, WHO, ITU, ISO, WMO, FAO, UNESCO |
+| Research Institutions | 18 | 34.6% | CAS, CASS, Tsinghua University, MIT, Stanford, Brookings, Chatham House, RAND, Gartner, Forrester, IDC, CCID, CAICT, DRC, NERI, SSRC, Peking University, Zhejiang University |
+| Industry Associations | 6 | 11.5% | CESA, CPIA, SEMI, IEEE, GSMA, 3GPP |
+| News Media | 2 | 3.8% | Xinhua News, Reuters |
+| Other Sources | 5 | 9.6% | Corporate Annual Reports, White Papers, Patent Databases, Think Tank Blogs, Expert Interviews |
+| **Total** | **52** | **100.0%** | — |
 
 ## Research Overview
 - **Research Subject**: Gen-Z Skincare Market Deep Analysis
@@ -617,12 +636,13 @@ output_locale = zh_CN  # configurable per user request
 reasoning_locale = en
 ```
 
-## Notes
+## Constraints
 
 - This skill operates in **two phases** of a multi-step agentic workflow:
   - **Phase 1** produces the analysis framework and data collection requirements
-  - **Data collection** is performed by other skills (deep-research, data-analysis, etc.)
+  - **Data collection** is performed by search-planning skill, and data analysis by data-analysis skill. These 2 skills must be loaded **before** data collection task
   - **Phase 2** receives the collected data and produces the final report
+- Step Adherence: Must strictly follow the phased execution order; no steps or components may be skipped or omitted.
 - Dynamic titling: **Rewrite** topics from the Framework into professional, concise subject-based headers
 - The Conclusion section must contain **NO** detailed recommendations — those belong in the preceding body chapters
 - **ZERO HALLUCINATION POLICY**: Each statement, chart, and number in the report must be supported by data points from the input Data Summary. If data is missing, admit it.

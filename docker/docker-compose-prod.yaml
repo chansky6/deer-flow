@@ -1,15 +1,12 @@
-# DeerFlow Production Environment
+# ============================================================
+# 合并部署配置：DeerFlow + OpenClaw
 # Usage: docker compose -f docker-compose-prod.yaml up --build -d
-#
-# Prerequisites:
-#   - Copy config.example.yaml to ../config.yaml and configure models
-#   - Copy .env.example to ../.env and set API keys
-#   - Copy frontend/.env.example to ../frontend/.env
-#
-# Access: http://localhost:80
+# ============================================================
+
+version: '3.8'
 
 services:
-  # ── Reverse Proxy ──
+  # ── Reverse Proxy (统一入口) ──
   nginx:
     image: nginx:alpine
     container_name: deer-flow-nginx
@@ -18,7 +15,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/certs:/etc/nginx/certs:ro  # 通配符证书 *.bbit.fun
     depends_on:
       frontend:
         condition: service_started
@@ -74,7 +71,7 @@ services:
       dockerfile: backend/Dockerfile.prod
     container_name: deer-flow-langgraph
     command: >
-      sh -c "cd backend && uv run langgraph dev
+      sh -c "cd backend && exec uv run langgraph dev
       --no-browser --allow-blocking
       --host 0.0.0.0 --port 2024"
     volumes:
@@ -88,11 +85,15 @@ services:
     networks:
       - deer-flow-prod
     restart: always
+    stop_grace_period: 30s
+    stop_signal: SIGTERM
 
+# ── Volumes ──
 volumes:
   deer-flow-data:
   langgraph-state:
 
+# ── Networks ──
 networks:
   deer-flow-prod:
     driver: bridge

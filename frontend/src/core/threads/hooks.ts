@@ -3,7 +3,7 @@ import type { AIMessage } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
 import { useStream, type UseStream } from "@langchain/langgraph-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
@@ -29,12 +29,40 @@ export function useThreadStream({
 }) {
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+
+  // Demo thread IDs from showcase
+  const DEMO_THREAD_IDS = [
+    "7cfa5f8f-a2f8-47ad-acbd-da7137baf990",
+    "4f3e55ee-f853-43db-bfb3-7d1a411f03cb",
+    "21cfea46-34bd-4aa6-9e1f-3009452fbeb9",
+    "ad76c455-5bf9-4335-8517-fc03834ab828",
+    "d3e5adaf-084c-4dd5-9d29-94f1d6bccd98",
+    "3823e443-4e2b-4679-b496-a9506eae462b",
+  ];
+
+  const isDemoThread = threadId && DEMO_THREAD_IDS.includes(threadId);
+  const [demoState, setDemoState] = useState<AgentThreadState | null>(null);
+
+  useEffect(() => {
+    if (isDemoThread && threadId) {
+      fetch(`/demo/threads/${threadId}/thread.json`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.values) {
+            setDemoState(data.values);
+            onFinish?.(data.values);
+          }
+        })
+        .catch(() => setDemoState(null));
+    }
+  }, [isDemoThread, threadId, onFinish]);
+
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(),
     assistantId: "lead_agent",
-    threadId: isNewThread ? undefined : threadId,
-    reconnectOnMount: true,
-    fetchStateHistory: { limit: 1 },
+    threadId: isDemoThread ? undefined : (isNewThread ? undefined : threadId),
+    reconnectOnMount: !isDemoThread,
+    fetchStateHistory: isDemoThread ? false : { limit: 1 },
     onCustomEvent(event: unknown) {
       console.info(event);
       if (
@@ -76,6 +104,20 @@ export function useThreadStream({
       );
     },
   });
+
+  // Return demo state if available
+  if (demoState) {
+    return {
+      values: demoState,
+      messages: demoState.messages || [],
+      isLoading: false,
+      isThreadLoading: false,
+      history: [],
+      submit: thread.submit,
+      stop: thread.stop,
+    } as any;
+  }
+
   return thread;
 }
 
