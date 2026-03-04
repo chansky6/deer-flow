@@ -1,7 +1,7 @@
 import type { HumanMessage } from "@langchain/core/messages";
 import type { AIMessage } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
-import { useStream, type UseStream } from "@langchain/langgraph-sdk/react";
+import { useStream } from "@langchain/langgraph-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -94,6 +94,13 @@ export function useThreadStream({
   onToolEnd,
 }: ThreadStreamOptions) {
   const [_threadId, setThreadId] = useState<string | null>(threadId ?? null);
+
+  useEffect(() => {
+    if (_threadId && _threadId !== threadId) {
+      setThreadId(threadId ?? null);
+    }
+  }, [threadId, _threadId]);
+
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
   const [streamingFrameworkReview, setStreamingFrameworkReview] =
@@ -197,6 +204,7 @@ export function useThreadStream({
           });
         },
       );
+      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
     },
   });
 
