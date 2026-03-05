@@ -42,15 +42,18 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [autoOpen, setAutoOpen] = useState(true);
   const { setOpen: setSidebarOpen } = useSidebar();
 
-  const select = useCallback((artifact: string, autoSelect = false) => {
-    setSelectedArtifact(artifact);
-    if (env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true") {
-      setSidebarOpen(false);
-    }
-    if (!autoSelect) {
-      setAutoSelect(false);
-    }
-  }, [setSidebarOpen]);
+  const select = useCallback(
+    (artifact: string, autoSelect = false) => {
+      setSelectedArtifact(artifact);
+      if (env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true") {
+        setSidebarOpen(false);
+      }
+      if (!autoSelect) {
+        setAutoSelect(false);
+      }
+    },
+    [setSidebarOpen, setSelectedArtifact, setAutoSelect],
+  );
 
   const deselect = useCallback(() => {
     setSelectedArtifact(null);
