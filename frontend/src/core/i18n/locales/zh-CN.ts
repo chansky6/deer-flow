@@ -270,6 +270,11 @@ export const zhCN: Translations = {
     autoContinueError: "框架已保存，但自动继续失败；你可以手动继续。",
   },
 
+  uploads: {
+    uploading: "上传中...",
+    uploadingFiles: "文件上传中，请稍候...",
+  },
+
   subtasks: {
     subtask: "子任务",
     executing: (count: number) =>

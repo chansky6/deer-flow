@@ -1,16 +1,19 @@
 import type { HumanMessage } from "@langchain/core/messages";
-import type { AIMessage } from "@langchain/langgraph-sdk";
+import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
-import { useStream } from "@langchain/langgraph-sdk/react";
+import { useStream, type UseStream } from "@langchain/langgraph-sdk/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import type { PromptInputMessage } from "@/components/ai-elements/prompt-input";
 
 import { getAPIClient } from "../api";
+import { useI18n } from "../i18n/hooks";
+import type { FileInMessage } from "../messages/utils";
 import type { LocalSettings } from "../settings";
 import { useUpdateSubtask } from "../tasks/context";
+import type { UploadedFileInfo } from "../uploads";
 import { uploadFiles } from "../uploads";
 
 import type {
@@ -93,11 +96,14 @@ export function useThreadStream({
   onFinish,
   onToolEnd,
 }: ThreadStreamOptions) {
+  const { t } = useI18n();
   const [_threadId, setThreadId] = useState<string | null>(threadId ?? null);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     if (_threadId && _threadId !== threadId) {
       setThreadId(threadId ?? null);
+      startedRef.current = false;
     }
   }, [threadId, _threadId]);
 
@@ -140,7 +146,10 @@ export function useThreadStream({
     fetchStateHistory: isDemoThread ? false : { limit: 1 },
     onCreated(meta) {
       setThreadId(meta.thread_id);
-      onStart?.(meta.thread_id);
+      if (!startedRef.current) {
+        onStart?.(meta.thread_id);
+        startedRef.current = true;
+      }
     },
     onLangChainEvent(event) {
       if (event.event === "on_tool_end") {
@@ -208,20 +217,17 @@ export function useThreadStream({
     },
   });
 
-  const threadWithMeta = Object.assign(thread, {
-    streamingFrameworkReview,
-  }) as UseThreadStreamResult;
+  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
+  const prevMsgCountRef = useRef(thread.messages.length);
 
-  const resultThread = demoState
-    ? (Object.assign(thread, {
-        streamingFrameworkReview: null,
-        values: demoState,
-        messages: demoState.messages || [],
-        isLoading: false,
-        isThreadLoading: false,
-        history: [],
-      }) as UseThreadStreamResult)
-    : threadWithMeta;
+  useEffect(() => {
+    if (
+      optimisticMessages.length > 0 &&
+      thread.messages.length > prevMsgCountRef.current
+    ) {
+      setOptimisticMessages([]);
+    }
+  }, [thread.messages.length, optimisticMessages.length]);
 
   const sendMessage = useCallback(
     async (
@@ -231,74 +237,190 @@ export function useThreadStream({
     ) => {
       const text = message.text.trim();
 
-      if (message.files && message.files.length > 0) {
-        try {
-          const filePromises = message.files.map(async (fileUIPart) => {
-            if (fileUIPart.url && fileUIPart.filename) {
-              try {
-                const response = await fetch(fileUIPart.url);
-                const blob = await response.blob();
+      prevMsgCountRef.current = thread.messages.length;
 
-                return new File([blob], fileUIPart.filename, {
-                  type: fileUIPart.mediaType || blob.type,
-                });
-              } catch (error) {
-                console.error(
-                  `Failed to fetch file ${fileUIPart.filename}:`,
-                  error,
-                );
-                return null;
-              }
-            }
-            return null;
-          });
+      const optimisticFiles: FileInMessage[] = (message.files ?? []).map(
+        (filePart) => ({
+          filename: filePart.filename ?? "",
+          size: 0,
+          status: "uploading" as const,
+        }),
+      );
 
-          const conversionResults = await Promise.all(filePromises);
-          const files = conversionResults.filter(
-            (file): file is File => file !== null,
-          );
-          const failedConversions = conversionResults.length - files.length;
+      const optimisticHumanMsg: Message = {
+        type: "human",
+        id: `opt-human-${Date.now()}`,
+        content: text ? [{ type: "text", text }] : "",
+        additional_kwargs:
+          optimisticFiles.length > 0 ? { files: optimisticFiles } : {},
+      };
 
-          if (failedConversions > 0) {
-            throw new Error(
-              `Failed to prepare ${failedConversions} attachment(s) for upload. Please retry.`,
-            );
-          }
+      const newOptimistic: Message[] = [optimisticHumanMsg];
+      if (optimisticFiles.length > 0) {
+        newOptimistic.push({
+          type: "ai",
+          id: `opt-ai-${Date.now()}`,
+          content: t.uploads.uploadingFiles,
+          additional_kwargs: { element: "task" },
+        });
+      }
+      setOptimisticMessages(newOptimistic);
 
-          if (!targetThreadId) {
-            throw new Error("Thread is not ready for file upload.");
-          }
-
-          if (files.length > 0) {
-            await uploadFiles(targetThreadId, files);
-          }
-        } catch (error) {
-          console.error("Failed to upload files:", error);
-          const errorMessage =
-            error instanceof Error ? error.message : "Failed to upload files.";
-          toast.error(errorMessage);
-          throw error;
-        }
+      if (!startedRef.current) {
+        onStart?.(targetThreadId);
+        startedRef.current = true;
       }
 
-      await submitThreadTextMessage({
-        thread,
-        text,
-        threadId: targetThreadId,
-        submitThreadId: _threadId ?? targetThreadId,
-        threadContext: {
-          ...extraContext,
-          ...context,
-          thinking_enabled: context.mode !== "flash",
-          is_plan_mode: context.mode === "pro" || context.mode === "ultra",
-          subagent_enabled: context.mode === "ultra",
-          reasoning_effort: context.reasoning_effort,
-        },
-      });
-      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      let uploadedFileInfo: UploadedFileInfo[] = [];
+
+      try {
+        if (message.files && message.files.length > 0) {
+          try {
+            const filePromises = message.files.map(async (fileUIPart) => {
+              if (fileUIPart.url && fileUIPart.filename) {
+                try {
+                  const response = await fetch(fileUIPart.url);
+                  const blob = await response.blob();
+
+                  return new File([blob], fileUIPart.filename, {
+                    type: fileUIPart.mediaType || blob.type,
+                  });
+                } catch (error) {
+                  console.error(
+                    `Failed to fetch file ${fileUIPart.filename}:`,
+                    error,
+                  );
+                  return null;
+                }
+              }
+              return null;
+            });
+
+            const conversionResults = await Promise.all(filePromises);
+            const files = conversionResults.filter(
+              (file): file is File => file !== null,
+            );
+            const failedConversions = conversionResults.length - files.length;
+
+            if (failedConversions > 0) {
+              throw new Error(
+                `Failed to prepare ${failedConversions} attachment(s) for upload. Please retry.`,
+              );
+            }
+
+            if (!targetThreadId) {
+              throw new Error("Thread is not ready for file upload.");
+            }
+
+            if (files.length > 0) {
+              const uploadResponse = await uploadFiles(targetThreadId, files);
+              uploadedFileInfo = uploadResponse.files;
+
+              const uploadedFiles: FileInMessage[] = uploadedFileInfo.map(
+                (info) => ({
+                  filename: info.filename,
+                  size: info.size,
+                  path: info.virtual_path,
+                  status: "uploaded" as const,
+                }),
+              );
+              setOptimisticMessages((messages) => {
+                if (messages.length > 1 && messages[0]) {
+                  const humanMessage = messages[0]!;
+                  return [
+                    {
+                      ...humanMessage,
+                      additional_kwargs: { files: uploadedFiles },
+                    },
+                    ...messages.slice(1),
+                  ];
+                }
+                return messages;
+              });
+            }
+          } catch (error) {
+            console.error("Failed to upload files:", error);
+            const errorMessage =
+              error instanceof Error ? error.message : "Failed to upload files.";
+            toast.error(errorMessage);
+            setOptimisticMessages([]);
+            throw error;
+          }
+        }
+
+        const filesForSubmit: FileInMessage[] = uploadedFileInfo.map((info) => ({
+          filename: info.filename,
+          size: info.size,
+          path: info.virtual_path,
+          status: "uploaded" as const,
+        }));
+
+        await thread.submit(
+          {
+            messages: [
+              {
+                type: "human",
+                content: [
+                  {
+                    type: "text",
+                    text,
+                  },
+                ],
+                additional_kwargs:
+                  filesForSubmit.length > 0 ? { files: filesForSubmit } : {},
+              },
+            ],
+          },
+          {
+            threadId: targetThreadId,
+            streamSubgraphs: true,
+            streamResumable: true,
+            streamMode: ["values", "messages-tuple", "custom"],
+            config: {
+              recursion_limit: 1000,
+            },
+            context: {
+              ...extraContext,
+              ...context,
+              thinking_enabled: context.mode !== "flash",
+              is_plan_mode: context.mode === "pro" || context.mode === "ultra",
+              subagent_enabled: context.mode === "ultra",
+              reasoning_effort: context.reasoning_effort,
+              thread_id: targetThreadId,
+            },
+          },
+        );
+        void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      } catch (error) {
+        setOptimisticMessages([]);
+        throw error;
+      }
     },
-    [thread, _threadId, context, queryClient],
+    [thread, t.uploads.uploadingFiles, onStart, context, queryClient],
   );
+
+  const threadWithMeta = Object.assign(thread, {
+    streamingFrameworkReview,
+  }) as UseThreadStreamResult;
+
+  const baseThread = demoState
+    ? (Object.assign(threadWithMeta, {
+        streamingFrameworkReview: null,
+        values: demoState,
+        messages: demoState.messages || [],
+        isLoading: false,
+        isThreadLoading: false,
+        history: [],
+      }) as UseThreadStreamResult)
+    : threadWithMeta;
+
+  const resultThread =
+    optimisticMessages.length > 0
+      ? ({
+          ...baseThread,
+          messages: [...baseThread.messages, ...optimisticMessages],
+        } as UseThreadStreamResult)
+      : baseThread;
 
   return [resultThread, sendMessage] as const;
 }

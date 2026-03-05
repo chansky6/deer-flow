@@ -219,6 +219,12 @@ export interface Translations {
     autoContinueError: string;
   };
 
+  // Uploads
+  uploads: {
+    uploading: string;
+    uploadingFiles: string;
+  };
+
   // Subtasks
   subtasks: {
     subtask: string;

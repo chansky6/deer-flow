@@ -96,9 +96,11 @@ export const enUS: Translations = {
     reasoningEffortLow: "Low",
     reasoningEffortLowDescription: "Simple Logic Check + Shallow Deduction",
     reasoningEffortMedium: "Medium",
-    reasoningEffortMediumDescription: "Multi-layer Logic Analysis + Basic Verification",
+    reasoningEffortMediumDescription:
+      "Multi-layer Logic Analysis + Basic Verification",
     reasoningEffortHigh: "High",
-    reasoningEffortHighDescription: "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
+    reasoningEffortHighDescription:
+      "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
     searchModels: "Search models...",
     surpriseMe: "Surprise",
     surpriseMePrompt: "Surprise me",
@@ -285,6 +287,11 @@ export const enUS: Translations = {
   },
 
   // Subtasks
+  uploads: {
+    uploading: "Uploading...",
+    uploadingFiles: "Uploading files, please wait...",
+  },
+
   subtasks: {
     subtask: "Subtask",
     executing: (count: number) =>
