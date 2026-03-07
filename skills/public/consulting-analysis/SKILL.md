@@ -465,6 +465,18 @@ Additionally verify:
 
 The report **MUST NOT** stop after the Conclusion — it **MUST** include References as the final section.
 
+### Step 2.6: Save and Present the Final Report
+
+Once the report markdown is finalized:
+
+1. **Write the report to a real file first** using `write_file`
+2. **Use a deterministic output path**: `/mnt/user-data/outputs/final_report.md`
+3. **Only after `write_file` succeeds**, call `present_files` with the same path
+4. Treat the saved Markdown file as the authoritative final deliverable shown to the user in the artifact panel
+5. After presenting the file, provide only a short completion message if needed — **do not paste the entire report again in chat**
+
+> **Important**: Do not rely on chat-only Markdown output for Phase 2 delivery. The final report must exist as a file in `/mnt/user-data/outputs` and must be shared via `present_files`.
+
 ## Formatting & Tone Standards
 
 ### Consulting Voice
@@ -663,7 +675,7 @@ After data collection, user provides: Analysis Framework + Data Summary with bra
 ## Output Format
 
 - **Phase 1**: Call `start_framework_review_draft`, generate the complete Analysis Framework in **Markdown** format as a normal assistant response, then trigger `request_framework_review` for user confirmation without repeating the full framework in tool arguments
-- **Phase 2**: Output the complete Report in **Markdown** format
+- **Phase 2**: Generate the complete Report in **Markdown** format, save it to `/mnt/user-data/outputs/final_report.md` with `write_file`, and then share it with `present_files`; do not deliver Phase 2 as chat-only Markdown
 
 ## Settings
 

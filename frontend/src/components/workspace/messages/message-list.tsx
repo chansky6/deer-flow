@@ -45,6 +45,7 @@ export function MessageList({
   streamingFrameworkReview,
   frameworkReview,
   confirmedFrameworkMarkdown,
+  isFrameworkReviewLocked = false,
   isConfirmingFrameworkReview = false,
   onConfirmFrameworkReview,
 }: {
@@ -57,6 +58,7 @@ export function MessageList({
   streamingFrameworkReview?: StreamingFrameworkReviewState | null;
   frameworkReview?: FrameworkReviewState | null;
   confirmedFrameworkMarkdown?: string | null;
+  isFrameworkReviewLocked?: boolean;
   isConfirmingFrameworkReview?: boolean;
   onConfirmFrameworkReview?: (markdown: string) => Promise<void>;
 }) {
@@ -220,6 +222,7 @@ export function MessageList({
         review={frameworkReview}
         rehypePlugins={rehypePlugins}
         isConfirming={isConfirmingFrameworkReview}
+        isLocked={isFrameworkReviewLocked}
         onConfirm={onConfirmFrameworkReview}
       />
     ) : !frameworkReview && streamingFrameworkReview ? (

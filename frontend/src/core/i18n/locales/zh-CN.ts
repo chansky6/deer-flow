@@ -221,6 +221,9 @@ export const zhCN: Translations = {
     title: "审阅分析框架",
     defaultInstructions: "请直接编辑下面的分析框架，确认后再继续后续流程。",
     helperText: "你可以直接修改 Markdown 框架内容。确认后会保存当前版本，并自动继续下一步。",
+    lockedHelperText: "当前会话已经继续并完成后续生成，这里仅保留框架内容供查看，不能再编辑或确认。",
+    expand: "展开全文",
+    collapse: "收起内容",
     rawMarkdown: "Markdown",
     streamingStatus: "草稿生成中...",
     streamingDescription:

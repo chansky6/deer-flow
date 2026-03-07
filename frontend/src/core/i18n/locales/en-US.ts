@@ -227,6 +227,10 @@ export const enUS: Translations = {
       "Review and edit the draft analysis framework below, then confirm to continue.",
     helperText:
       "Edit the framework directly here. Confirming will save this version and continue the workflow automatically.",
+    lockedHelperText:
+      "This conversation has already continued and finished the downstream generation. The framework remains visible for reference only and can no longer be edited or confirmed.",
+    expand: "Expand",
+    collapse: "Collapse",
     rawMarkdown: "Markdown",
     streamingStatus: "Generating draft...",
     streamingDescription:

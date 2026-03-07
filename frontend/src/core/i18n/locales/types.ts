@@ -173,6 +173,9 @@ export interface Translations {
     title: string;
     defaultInstructions: string;
     helperText: string;
+    lockedHelperText: string;
+    expand: string;
+    collapse: string;
     rawMarkdown: string;
     streamingStatus: string;
     streamingDescription: string;

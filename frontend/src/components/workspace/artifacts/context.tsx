@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { useSidebar } from "@/components/ui/sidebar";
 import { env } from "@/env";
@@ -35,7 +42,7 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
   const [autoOpen, setAutoOpen] = useState(true);
   const { setOpen: setSidebarOpen } = useSidebar();
 
-  const select = (artifact: string, autoSelect = false) => {
+  const select = useCallback((artifact: string, autoSelect = false) => {
     setSelectedArtifact(artifact);
     if (env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true") {
       setSidebarOpen(false);
@@ -43,32 +50,43 @@ export function ArtifactsProvider({ children }: ArtifactsProviderProps) {
     if (!autoSelect) {
       setAutoSelect(false);
     }
-  };
+  }, [setSidebarOpen]);
 
-  const deselect = () => {
+  const deselect = useCallback(() => {
     setSelectedArtifact(null);
     setAutoSelect(true);
-  };
+  }, []);
 
-  const value: ArtifactsContextType = {
+  const setArtifactsPanelOpen = useCallback((isOpen: boolean) => {
+    if (!isOpen && autoOpen) {
+      setAutoOpen(false);
+      setAutoSelect(false);
+    }
+    setOpen(isOpen);
+  }, [autoOpen]);
+
+  const value: ArtifactsContextType = useMemo(() => ({
     artifacts,
     setArtifacts,
 
     open,
     autoOpen,
     autoSelect,
-    setOpen: (isOpen: boolean) => {
-      if (!isOpen && autoOpen) {
-        setAutoOpen(false);
-        setAutoSelect(false);
-      }
-      setOpen(isOpen);
-    },
+    setOpen: setArtifactsPanelOpen,
 
     selectedArtifact,
     select,
     deselect,
-  };
+  }), [
+    artifacts,
+    open,
+    autoOpen,
+    autoSelect,
+    selectedArtifact,
+    select,
+    deselect,
+    setArtifactsPanelOpen,
+  ]);
 
   return (
     <ArtifactsContext.Provider value={value}>

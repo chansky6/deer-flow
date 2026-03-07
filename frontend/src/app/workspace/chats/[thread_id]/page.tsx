@@ -167,6 +167,8 @@ export default function ChatPage() {
   const {
     artifacts,
     open: artifactsOpen,
+    autoOpen: artifactsAutoOpen,
+    autoSelect: artifactsAutoSelect,
     setOpen: setArtifactsOpen,
     setArtifacts,
     select: selectArtifact,
@@ -259,21 +261,53 @@ export default function ChatPage() {
   ]);
 
   const [autoSelectFirstArtifact, setAutoSelectFirstArtifact] = useState(true);
+  const previousArtifactCountRef = useRef<number | null>(null);
   useEffect(() => {
-    setArtifacts(thread.values.artifacts);
+    const nextArtifacts = thread.values.artifacts ?? [];
+    const artifactsChanged =
+      artifacts.length !== nextArtifacts.length ||
+      artifacts.some((artifact, index) => artifact !== nextArtifacts[index]);
+
+    if (artifactsChanged) {
+      setArtifacts(nextArtifacts);
+    }
+
+    if (previousArtifactCountRef.current === null) {
+      previousArtifactCountRef.current = nextArtifacts.length;
+    } else if (
+      env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" &&
+      nextArtifacts.length > previousArtifactCountRef.current &&
+      artifactsAutoOpen &&
+      artifactsAutoSelect
+    ) {
+      const latestArtifact = nextArtifacts.at(-1);
+      if (latestArtifact && latestArtifact !== selectedArtifact) {
+        selectArtifact(latestArtifact, true);
+        setArtifactsOpen(true);
+      }
+      previousArtifactCountRef.current = nextArtifacts.length;
+    } else {
+      previousArtifactCountRef.current = nextArtifacts.length;
+    }
+
     if (
       env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" &&
       autoSelectFirstArtifact
     ) {
-      if (thread?.values?.artifacts?.length > 0) {
+      if (nextArtifacts.length > 0 && nextArtifacts[0] !== selectedArtifact) {
         setAutoSelectFirstArtifact(false);
-        selectArtifact(thread.values.artifacts[0]!);
+        selectArtifact(nextArtifacts[0]!);
       }
     }
   }, [
+    artifacts,
+    artifactsAutoOpen,
+    artifactsAutoSelect,
     autoSelectFirstArtifact,
     selectArtifact,
+    selectedArtifact,
     setArtifacts,
+    setArtifactsOpen,
     thread.values.artifacts,
   ]);
 
@@ -299,7 +333,6 @@ export default function ChatPage() {
     }
     return frameworkReview;
   }, [dismissedFrameworkReviewId, frameworkReview]);
-  const isFrameworkReviewPending = activeFrameworkReview?.status === "pending";
   const confirmedFrameworkMarkdown =
     thread.values.confirmed_analysis_framework?.markdown ??
     optimisticConfirmedFrameworkMarkdown;
@@ -352,6 +385,33 @@ export default function ChatPage() {
       }),
     [frameworkReviewToolCallId, visibleMessages],
   );
+  const frameworkReviewAnchorMessageIndex = useMemo(
+    () =>
+      frameworkReviewAnchorMessageId
+        ? visibleMessages.findIndex(
+            (message) => message.id === frameworkReviewAnchorMessageId,
+          )
+        : -1,
+    [frameworkReviewAnchorMessageId, visibleMessages],
+  );
+  const isFrameworkReviewLocked = useMemo(() => {
+    if (!activeFrameworkReview || thread.isLoading) {
+      return false;
+    }
+
+    if (frameworkReviewAnchorMessageIndex < 0) {
+      return false;
+    }
+
+    return visibleMessages.length > frameworkReviewAnchorMessageIndex + 1;
+  }, [
+    activeFrameworkReview,
+    frameworkReviewAnchorMessageIndex,
+    thread.isLoading,
+    visibleMessages.length,
+  ]);
+  const isFrameworkReviewPending =
+    activeFrameworkReview?.status === "pending" && !isFrameworkReviewLocked;
   const streamingFrameworkReview =
     useMemo<StreamingFrameworkReviewState | null>(() => {
       if (!thread.isLoading || !thread.streamingFrameworkReview) {
@@ -489,6 +549,7 @@ export default function ChatPage() {
                   streamingFrameworkReview={streamingFrameworkReview}
                   frameworkReview={activeFrameworkReview}
                   confirmedFrameworkMarkdown={confirmedFrameworkMarkdown}
+                  isFrameworkReviewLocked={isFrameworkReviewLocked}
                   isConfirmingFrameworkReview={isConfirmingFrameworkReview}
                   onConfirmFrameworkReview={handleConfirmFrameworkReview}
                 />
