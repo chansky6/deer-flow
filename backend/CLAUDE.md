@@ -130,7 +130,7 @@ Middlewares execute in strict order in `src/agents/lead_agent/agent.py`:
 8. **MemoryMiddleware** - Queues conversations for async memory update (filters to user + final AI responses)
 9. **ViewImageMiddleware** - Injects base64 image data before LLM call (conditional on vision support)
 10. **SubagentLimitMiddleware** - Truncates excess `task` tool calls from model response to enforce `MAX_CONCURRENT_SUBAGENTS` limit (optional, if subagent_enabled)
-11. **FrameworkReviewMiddleware** - Intercepts `request_framework_review`, stores `framework_review`, interrupts via `Command(goto=END)`, and prepends confirmed framework context on the next model call
+11. **FrameworkReviewMiddleware** - Intercepts `request_framework_review`, derives the authoritative draft from the triggering AIMessage content (falling back to deprecated tool args for compatibility), stores `framework_review`, interrupts via `Command(goto=END)`, and prepends confirmed framework context on the next model call
 12. **ClarificationMiddleware** - Intercepts `ask_clarification` tool calls, interrupts via `Command(goto=END)` (must be last)
 
 ### Configuration System
@@ -212,7 +212,7 @@ Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → 
    - `present_files` - Make output files visible to user (only `/mnt/user-data/outputs`)
    - `ask_clarification` - Request clarification (intercepted by ClarificationMiddleware → interrupts)
    - `start_framework_review_draft` - Emit a custom stream event that opens the inline framework-review card before the framework markdown is streamed
-   - `request_framework_review` - Pause after drafting a consulting-analysis framework and hand control to the inline review UI
+   - `request_framework_review` - Pause after drafting a consulting-analysis framework and hand control to the inline review UI, reusing the assistant markdown as the authoritative draft instead of requiring a duplicate markdown payload
    - `view_image` - Read image as base64 (added only if model supports vision)
 4. **Subagent tool** (if enabled):
    - `task` - Delegate to subagent (description, prompt, subagent_type, max_turns)

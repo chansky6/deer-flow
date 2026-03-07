@@ -296,10 +296,9 @@ After assembling the complete Analysis Framework document in Step 1.6, you **MUS
 - Call `start_framework_review_draft` immediately before you output the framework markdown
 - Output the complete framework as a normal assistant Markdown response so the draft can stream live in the review card
 - Call `request_framework_review` immediately after the framework is complete
-- Pass the **entire framework Markdown** via `framework_markdown`
 - Use a short `review_title` suitable for the review card header
 - Use `instructions` to explain what the user should do next
-- Keep the streamed framework content and `framework_markdown` identical
+- Treat the streamed framework content as the authoritative draft; do **not** repeat the full framework in `framework_markdown` unless compatibility requires it
 - Do **NOT** proceed to data collection, chart generation, or report writing until the framework has been reviewed and confirmed
 
 #### Required Tool Pattern
@@ -313,7 +312,6 @@ start_framework_review_draft(
 [output the complete Analysis Framework as the next assistant Markdown response]
 
 request_framework_review(
-    framework_markdown="[complete Analysis Framework markdown]",
     review_title="Review Analysis Framework",
     instructions="Please edit the framework directly and confirm it before I continue to the next step."
 )
@@ -335,7 +333,7 @@ request_framework_review(
 - [ ] Data priorities (P0/P1/P2) are assigned realistically
 - [ ] The framework is actionable — a data collection agent can execute on the Search Keywords directly
 - [ ] Data Collection Task List is comprehensive and deduplicated
-- [ ] The complete framework is handed off via `request_framework_review` before downstream execution
+- [ ] The review request is triggered immediately after the complete framework is streamed
 
 ---
 
@@ -664,7 +662,7 @@ After data collection, user provides: Analysis Framework + Data Summary with bra
 
 ## Output Format
 
-- **Phase 1**: Call `start_framework_review_draft`, generate the complete Analysis Framework in **Markdown** format as a normal assistant response, then submit that same Markdown through `request_framework_review` for user confirmation
+- **Phase 1**: Call `start_framework_review_draft`, generate the complete Analysis Framework in **Markdown** format as a normal assistant response, then trigger `request_framework_review` for user confirmation without repeating the full framework in tool arguments
 - **Phase 2**: Output the complete Report in **Markdown** format
 
 ## Settings

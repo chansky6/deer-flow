@@ -1,8 +1,9 @@
 """Core behavior tests for FrameworkReviewMiddleware."""
 
+import logging
 from unittest.mock import MagicMock
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
 from langgraph.types import Command
 
@@ -10,17 +11,33 @@ from src.agents.middlewares.framework_review_middleware import FrameworkReviewMi
 
 
 class TestFrameworkReviewMiddlewareCoreLogic:
-    def test_wrap_tool_call_interrupts_and_stores_pending_review(self):
+    def test_wrap_tool_call_interrupts_and_stores_pending_review_from_assistant_message(self):
         middleware = FrameworkReviewMiddleware()
         request = MagicMock()
         request.tool_call = {
             "name": "request_framework_review",
             "id": "tc-review-1",
             "args": {
-                "framework_markdown": "# Analysis Framework\n\n## Chapter 1",
                 "review_title": "Review Analysis Framework",
                 "instructions": "Edit the framework before continuing.",
             },
+        }
+        request.state = {
+            "messages": [
+                AIMessage(
+                    content="# Analysis Framework\n\n## Chapter 1",
+                    tool_calls=[
+                        {
+                            "name": "request_framework_review",
+                            "id": "tc-review-1",
+                            "args": {
+                                "review_title": "Review Analysis Framework",
+                                "instructions": "Edit the framework before continuing.",
+                            },
+                        }
+                    ],
+                )
+            ]
         }
         handler = MagicMock()
 
@@ -41,6 +58,64 @@ class TestFrameworkReviewMiddlewareCoreLogic:
         assert result.update["messages"][0].content == "Framework review requested."
         handler.assert_not_called()
 
+    def test_wrap_tool_call_falls_back_to_tool_argument_markdown(self):
+        middleware = FrameworkReviewMiddleware()
+        request = MagicMock()
+        request.tool_call = {
+            "name": "request_framework_review",
+            "id": "tc-review-fallback",
+            "args": {
+                "framework_markdown": "# Fallback Framework\n\n## Chapter 1",
+                "review_title": "Review Analysis Framework",
+            },
+        }
+        request.state = {"messages": []}
+        handler = MagicMock()
+
+        result = middleware.wrap_tool_call(request, handler)
+
+        assert isinstance(result, Command)
+        assert result.update["framework_review"]["draft_markdown"] == "# Fallback Framework\n\n## Chapter 1"
+        handler.assert_not_called()
+
+    def test_wrap_tool_call_prefers_assistant_content_over_tool_argument(self, caplog):
+        middleware = FrameworkReviewMiddleware()
+        request = MagicMock()
+        request.tool_call = {
+            "name": "request_framework_review",
+            "id": "tc-review-override",
+            "args": {
+                "framework_markdown": "# Old Framework\n\n## Wrong",
+                "review_title": "Review Analysis Framework",
+            },
+        }
+        request.state = {
+            "messages": [
+                AIMessage(
+                    content="# New Framework\n\n## Right",
+                    tool_calls=[
+                        {
+                            "name": "request_framework_review",
+                            "id": "tc-review-override",
+                            "args": {
+                                "review_title": "Review Analysis Framework",
+                            },
+                        }
+                    ],
+                )
+            ]
+        }
+        handler = MagicMock()
+
+        caplog.set_level(logging.WARNING)
+
+        result = middleware.wrap_tool_call(request, handler)
+
+        assert isinstance(result, Command)
+        assert result.update["framework_review"]["draft_markdown"] == "# New Framework\n\n## Right"
+        assert "mismatched assistant content" in caplog.text
+        handler.assert_not_called()
+
     def test_wrap_tool_call_returns_error_message_when_framework_is_missing(self):
         middleware = FrameworkReviewMiddleware()
         request = MagicMock()
@@ -52,6 +127,7 @@ class TestFrameworkReviewMiddlewareCoreLogic:
                 "review_title": "Review Analysis Framework",
             },
         }
+        request.state = {"messages": []}
         handler = MagicMock()
 
         result = middleware.wrap_tool_call(request, handler)
@@ -59,7 +135,7 @@ class TestFrameworkReviewMiddlewareCoreLogic:
         assert isinstance(result, ToolMessage)
         assert result.name == "request_framework_review"
         assert result.status == "error"
-        assert "framework_markdown" in result.content
+        assert "assistant message" in result.content
         handler.assert_not_called()
 
     def test_wrap_model_call_injects_confirmed_framework_context(self):

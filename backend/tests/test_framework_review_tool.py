@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from src.tools.builtins.framework_review_tool import start_framework_review_draft_tool
+from src.tools.builtins.framework_review_tool import request_framework_review_tool, start_framework_review_draft_tool
 
 
 class TestFrameworkReviewTools:
@@ -40,3 +40,11 @@ class TestFrameworkReviewTools:
                 "instructions": "Review and edit the draft analysis framework below, then confirm to continue.",
             }
         )
+
+    def test_request_framework_review_accepts_metadata_without_markdown_copy(self):
+        result = request_framework_review_tool.func(
+            review_title="Review Analysis Framework",
+            instructions="Please confirm before I continue.",
+        )
+
+        assert result == "Framework review request processed by middleware"

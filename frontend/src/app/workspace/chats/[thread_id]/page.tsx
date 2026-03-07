@@ -62,8 +62,60 @@ function isFrameworkReviewRequestMessage(message: Message) {
   return message.type === "tool" && message.name === "request_framework_review";
 }
 
+function isAssistantFrameworkReviewRequestMessage(message: Message) {
+  if (message.type === "ai") {
+    return (message.tool_calls ?? []).some(
+      (toolCall) => toolCall.name === "request_framework_review",
+    );
+  }
+
+  return false;
+}
+
 function isPlainAssistantTextMessage(message: Message) {
   return message.type === "ai" && hasContent(message) && !hasToolCalls(message);
+}
+
+function isFrameworkReviewDraftCarrierMessage(message: Message) {
+  return (
+    isPlainAssistantTextMessage(message) ||
+    (isAssistantFrameworkReviewRequestMessage(message) && hasContent(message))
+  );
+}
+
+function findFrameworkReviewAnchorMessageId({
+  messages,
+  toolCallId,
+}: {
+  messages: Message[];
+  toolCallId: string | null;
+}) {
+  if (!toolCallId) {
+    return undefined;
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (
+      message.type === "tool" &&
+      message.tool_call_id === toolCallId &&
+      message.name === "request_framework_review"
+    ) {
+      return message.id;
+    }
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.type !== "ai") {
+      continue;
+    }
+    if ((message.tool_calls ?? []).some((toolCall) => toolCall.id === toolCallId)) {
+      return message.id;
+    }
+  }
+
+  return undefined;
 }
 
 function findFrameworkReviewDraftMessageId({
@@ -74,13 +126,18 @@ function findFrameworkReviewDraftMessageId({
   includeStreamingFallback: boolean;
 }) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (!isFrameworkReviewRequestMessage(messages[index]!)) {
+    const current = messages[index]!;
+    if (!isFrameworkReviewRequestMessage(current)) {
       continue;
+    }
+
+    if (isFrameworkReviewDraftCarrierMessage(current)) {
+      return current.id;
     }
 
     for (let candidateIndex = index - 1; candidateIndex >= 0; candidateIndex -= 1) {
       const candidate = messages[candidateIndex]!;
-      if (isPlainAssistantTextMessage(candidate)) {
+      if (isFrameworkReviewDraftCarrierMessage(candidate)) {
         return candidate.id;
       }
     }
@@ -94,7 +151,7 @@ function findFrameworkReviewDraftMessageId({
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const candidate = messages[index]!;
-    if (isPlainAssistantTextMessage(candidate)) {
+    if (isFrameworkReviewDraftCarrierMessage(candidate)) {
       return candidate.id;
     }
   }
@@ -246,6 +303,10 @@ export default function ChatPage() {
   const confirmedFrameworkMarkdown =
     thread.values.confirmed_analysis_framework?.markdown ??
     optimisticConfirmedFrameworkMarkdown;
+  const frameworkReviewToolCallId =
+    activeFrameworkReview?.tool_call_id ??
+    thread.values.confirmed_analysis_framework?.tool_call_id ??
+    dismissedFrameworkReviewId;
   const sourceMessages = useMemo(
     () => ((finalState?.messages as Message[] | undefined) ?? thread.messages),
     [finalState?.messages, thread.messages],
@@ -259,36 +320,52 @@ export default function ChatPage() {
       }),
     [sourceMessages, thread.isLoading, thread.streamingFrameworkReview],
   );
+  const frameworkReviewDraftMessage = useMemo(
+    () =>
+      frameworkReviewDraftMessageId
+        ? sourceMessages.find((message) => message.id === frameworkReviewDraftMessageId)
+        : undefined,
+    [frameworkReviewDraftMessageId, sourceMessages],
+  );
   const visibleMessages = useMemo(() => {
-    if (!frameworkReviewDraftMessageId) {
+    if (
+      !frameworkReviewDraftMessageId ||
+      !frameworkReviewDraftMessage ||
+      !isPlainAssistantTextMessage(frameworkReviewDraftMessage)
+    ) {
       return sourceMessages;
     }
 
     return sourceMessages.filter(
       (message) => message.id !== frameworkReviewDraftMessageId,
     );
-  }, [sourceMessages, frameworkReviewDraftMessageId]);
+  }, [
+    frameworkReviewDraftMessage,
+    frameworkReviewDraftMessageId,
+    sourceMessages,
+  ]);
+  const frameworkReviewAnchorMessageId = useMemo(
+    () =>
+      findFrameworkReviewAnchorMessageId({
+        messages: visibleMessages,
+        toolCallId: frameworkReviewToolCallId,
+      }),
+    [frameworkReviewToolCallId, visibleMessages],
+  );
   const streamingFrameworkReview =
     useMemo<StreamingFrameworkReviewState | null>(() => {
       if (!thread.isLoading || !thread.streamingFrameworkReview) {
         return null;
       }
 
-      const draftMessage = frameworkReviewDraftMessageId
-        ? sourceMessages.find(
-            (message) => message.id === frameworkReviewDraftMessageId,
-          )
-        : undefined;
-
       return {
         ...thread.streamingFrameworkReview,
-        draft_markdown: draftMessage
-          ? extractContentFromMessage(draftMessage)
+        draft_markdown: frameworkReviewDraftMessage
+          ? extractContentFromMessage(frameworkReviewDraftMessage)
           : "",
       };
     }, [
-      frameworkReviewDraftMessageId,
-      sourceMessages,
+      frameworkReviewDraftMessage,
       thread.isLoading,
       thread.streamingFrameworkReview,
     ]);
@@ -407,6 +484,7 @@ export default function ChatPage() {
                   threadId={threadId}
                   thread={thread}
                   messages={visibleMessages}
+                  frameworkReviewInsertionMessageId={frameworkReviewAnchorMessageId}
                   paddingBottom={todoListCollapsed ? 160 : 280}
                   streamingFrameworkReview={streamingFrameworkReview}
                   frameworkReview={activeFrameworkReview}

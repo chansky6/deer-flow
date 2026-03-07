@@ -19,7 +19,7 @@ def start_framework_review_draft_tool(
     Required workflow:
     - Call this tool first
     - Then output the COMPLETE framework markdown as a normal assistant response
-    - Then call `request_framework_review` with the same final markdown
+    - Then call `request_framework_review` to open the review UI
     - Do not add extra narrative before or after the framework markdown
 
     Args:
@@ -44,15 +44,15 @@ def start_framework_review_draft_tool(
 
 @tool("request_framework_review", parse_docstring=True, return_direct=True)
 def request_framework_review_tool(
-    framework_markdown: str,
     review_title: str,
     instructions: str | None = None,
+    framework_markdown: str | None = None,
 ) -> str:
     """Request the user to review and edit an analysis framework before continuing.
 
     Use this tool when you have finished drafting a complete analysis framework,
-    already streamed that draft to the user, and now need confirmation before the
-    workflow proceeds.
+    already streamed that draft to the user in the same assistant response, and now
+    need confirmation before the workflow proceeds.
 
     When to use request_framework_review:
     - You generated a complete Phase 1 analysis framework for the consulting-analysis skill
@@ -62,15 +62,16 @@ def request_framework_review_tool(
     Best practices:
     - First call `start_framework_review_draft`
     - Then output the COMPLETE framework markdown as a normal assistant response
-    - Pass the COMPLETE framework markdown in `framework_markdown`
-    - Keep `framework_markdown` identical to the streamed draft the user just saw
+    - Call this tool in the same assistant response that contains that final markdown
+    - Prefer omitting `framework_markdown`; the backend will capture the assistant markdown automatically
+    - If you provide `framework_markdown` for compatibility, keep it identical to the streamed draft the user just saw
     - Use a concise `review_title` suitable for the review card header
     - Use `instructions` to explain what the user should do next
     - Call this tool immediately after the streamed framework draft is complete
 
     Args:
-        framework_markdown: The full framework draft in Markdown format.
         review_title: Short title displayed in the framework review UI.
         instructions: Optional guidance shown above the editable framework.
+        framework_markdown: Deprecated optional copy of the full framework draft in Markdown format.
     """
     return "Framework review request processed by middleware"
