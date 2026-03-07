@@ -18,6 +18,14 @@ export interface Translations {
     more: string;
     search: string;
     download: string;
+    export: string;
+    exportAsPdf: string;
+    exportAsWord: string;
+    downloadAsPdf: string;
+    downloadAsWord: string;
+    downloadAsMarkdown: string;
+    failedToDownload: string;
+    failedToExport: string;
     thinking: string;
     artifacts: string;
     public: string;

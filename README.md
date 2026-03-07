@@ -180,6 +180,8 @@ DeerFlow 2.0 is no longer a framework you wire together. It's a super agent harn
 
 Use it as-is. Or tear it apart and make it yours.
 
+The workspace artifact viewer supports raw file downloads, and Markdown artifacts can be downloaded from the right-side panel as Markdown, PDF, or Word documents with CJK-safe font fallback for Chinese content and panel-aligned sans PDF typography for English text.
+
 ## Core Features
 
 ### Skills & Tools
@@ -282,6 +284,7 @@ All dict-returning methods are validated against Gateway Pydantic response model
 - [Configuration Guide](backend/docs/CONFIGURATION.md) - Setup and configuration instructions
 - [Architecture Overview](backend/CLAUDE.md) - Technical architecture details
 - [Backend Architecture](backend/README.md) - Backend architecture and API reference
+- [LangGraph HITL Research](docs/LANGGRAPH_HITL_RESEARCH.md) - Investigation of the project's clarification-based human-in-the-loop flow
 
 ## Contributing
 

@@ -20,6 +20,12 @@ import {
   ArtifactHeader,
   ArtifactTitle,
 } from "@/components/ai-elements/artifact";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectItem } from "@/components/ui/select";
 import {
   SelectContent,
@@ -30,7 +36,11 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CodeEditor } from "@/components/workspace/code-editor";
 import { useArtifactContent } from "@/core/artifacts/hooks";
-import { urlOfArtifact } from "@/core/artifacts/utils";
+import {
+  downloadArtifact,
+  type ArtifactDownloadFormat,
+  urlOfArtifact,
+} from "@/core/artifacts/utils";
 import { useI18n } from "@/core/i18n/hooks";
 import { installSkill } from "@/core/skills/api";
 import { streamdownPlugins } from "@/core/streamdown";
@@ -82,6 +92,17 @@ export function ArtifactFileDetail({
   const previewable = useMemo(() => {
     return (language === "html" && !isWriteFile) || language === "markdown";
   }, [isWriteFile, language]);
+  const exportable = useMemo(() => {
+    return (
+      language === "markdown"
+      && !isWriteFile
+      && !isSkillFile
+      && env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true"
+    );
+  }, [isSkillFile, isWriteFile, language]);
+  const downloadWithFormatOptions = useMemo(() => {
+    return language === "markdown" && !isWriteFile && !isSkillFile;
+  }, [isSkillFile, isWriteFile, language]);
   const { content } = useArtifactContent({
     threadId,
     filepath: filepathFromProps,
@@ -92,6 +113,8 @@ export function ArtifactFileDetail({
 
   const [viewMode, setViewMode] = useState<"code" | "preview">("code");
   const [isInstalling, setIsInstalling] = useState(false);
+  const [downloadingFormat, setDownloadingFormat] =
+    useState<ArtifactDownloadFormat | null>(null);
 
   useEffect(() => {
     if (previewable) {
@@ -122,6 +145,23 @@ export function ArtifactFileDetail({
       setIsInstalling(false);
     }
   }, [threadId, filepath, isInstalling]);
+
+  const handleDownload = useCallback(async (format: ArtifactDownloadFormat) => {
+    if (downloadingFormat) return;
+
+    setDownloadingFormat(format);
+    try {
+      await downloadArtifact({ filepath, threadId, format });
+    } catch (error) {
+      console.error("Failed to download artifact:", error);
+      toast.error(
+        error instanceof Error ? error.message : t.common.failedToDownload,
+      );
+    } finally {
+      setDownloadingFormat(null);
+    }
+  }, [downloadingFormat, filepath, t.common.failedToDownload, threadId]);
+
   return (
     <Artifact className={cn(className)}>
       <ArtifactHeader className="px-2">
@@ -210,18 +250,64 @@ export function ArtifactFileDetail({
                 tooltip={t.clipboard.copyToClipboard}
               />
             )}
-            {!isWriteFile && (
-              <a
-                href={urlOfArtifact({ filepath, threadId, download: true })}
-                target="_blank"
-              >
-                <ArtifactAction
-                  icon={DownloadIcon}
-                  label={t.common.download}
-                  tooltip={t.common.download}
-                />
-              </a>
-            )}
+            {!isWriteFile &&
+              (downloadWithFormatOptions ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <ArtifactAction
+                      className={cn(downloadingFormat && "[&_svg]:animate-spin")}
+                      icon={downloadingFormat ? LoaderIcon : DownloadIcon}
+                      label={t.common.download}
+                      tooltip={t.common.download}
+                      disabled={Boolean(downloadingFormat)}
+                    />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {exportable && (
+                      <>
+                        <DropdownMenuItem
+                          disabled={Boolean(downloadingFormat)}
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            void handleDownload("pdf");
+                          }}
+                        >
+                          {t.common.downloadAsPdf}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={Boolean(downloadingFormat)}
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            void handleDownload("docx");
+                          }}
+                        >
+                          {t.common.downloadAsWord}
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuItem
+                      disabled={Boolean(downloadingFormat)}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        void handleDownload("md");
+                      }}
+                    >
+                      {t.common.downloadAsMarkdown}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <a
+                  href={urlOfArtifact({ filepath, threadId, download: true })}
+                  target="_blank"
+                >
+                  <ArtifactAction
+                    icon={DownloadIcon}
+                    label={t.common.download}
+                    tooltip={t.common.download}
+                  />
+                </a>
+              ))}
             <ArtifactAction
               icon={XIcon}
               label={t.common.close}
@@ -294,4 +380,3 @@ export function ArtifactFilePreview({
   }
   return null;
 }
-

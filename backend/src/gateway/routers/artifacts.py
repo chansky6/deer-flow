@@ -4,9 +4,10 @@ import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Response
 
+from src.gateway.markdown_export import export_markdown_document
 from src.gateway.path_utils import resolve_thread_virtual_path
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,51 @@ def _extract_file_from_skill_archive(zip_path: Path, internal_path: str) -> byte
             return None
     except (zipfile.BadZipFile, KeyError):
         return None
+
+
+@router.get(
+    "/threads/{thread_id}/artifacts/export/{path:path}",
+    summary="Export Markdown Artifact",
+    description="Export a Markdown artifact as a PDF or Word document.",
+)
+async def export_artifact(
+    thread_id: str,
+    path: str,
+    format: str = Query(..., pattern="^(pdf|docx)$"),
+) -> Response:
+    actual_path = resolve_thread_virtual_path(thread_id, path)
+
+    if not actual_path.exists():
+        raise HTTPException(status_code=404, detail=f"Artifact not found: {path}")
+
+    if not actual_path.is_file():
+        raise HTTPException(status_code=400, detail=f"Path is not a file: {path}")
+
+    if actual_path.suffix.lower() != ".md":
+        raise HTTPException(status_code=400, detail="Only Markdown artifacts can be exported")
+
+    try:
+        markdown_text = actual_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Markdown artifact must be UTF-8 encoded") from exc
+
+    try:
+        exported = export_markdown_document(markdown_text, format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to export artifact %s for thread %s", path, thread_id)
+        raise HTTPException(status_code=500, detail="Failed to export artifact") from exc
+
+    filename = f"{actual_path.stem}.{exported.extension}"
+    encoded_filename = quote(filename)
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
+    )
 
 
 @router.get(

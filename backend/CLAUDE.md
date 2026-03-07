@@ -167,7 +167,7 @@ FastAPI application on port 8001 with health check at `GET /health`.
 | **Skills** (`/api/skills`) | `GET /` - list skills; `GET /{name}` - details; `PUT /{name}` - update enabled; `POST /install` - install from .skill archive |
 | **Memory** (`/api/memory`) | `GET /` - memory data; `POST /reload` - force reload; `GET /config` - config; `GET /status` - config + data |
 | **Uploads** (`/api/threads/{id}/uploads`) | `POST /` - upload files (auto-converts PDF/PPT/Excel/Word); `GET /list` - list; `DELETE /{filename}` - delete |
-| **Artifacts** (`/api/threads/{id}/artifacts`) | `GET /{path}` - serve artifacts; `?download=true` for file download |
+| **Artifacts** (`/api/threads/{id}/artifacts`) | `GET /{path}` - serve artifacts; `?download=true` for file download; `GET /export/{path}?format=pdf|docx` - export Markdown artifacts as PDF or Word |
 
 Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → Gateway.
 
@@ -319,6 +319,8 @@ Both can be modified at runtime via Gateway API endpoints or `DeerFlowClient` me
 | Memory | `get_memory()`, `reload_memory()`, `get_memory_config()`, `get_memory_status()` | dict |
 | Uploads | `upload_files(thread_id, files)`, `list_uploads(thread_id)`, `delete_upload(thread_id, filename)` | `{"success": true, "files": [...]}`, `{"files": [...], "count": N}` |
 | Artifacts | `get_artifact(thread_id, path)` → `(bytes, mime_type)` | tuple |
+
+**Markdown export implementation**: `src/gateway/markdown_export.py` parses persisted `.md` artifacts into an internal document model, applies a theme/token layer, renders PDF/DOCX with pure Python dependencies (`reportlab`, `python-docx`), prefers locally available panel-like sans font files for English PDF text, falls back to PDF Helvetica variants when those files are unavailable, and switches to CJK-safe font settings when Chinese content appears. This keeps export deployment-friendly and makes later style adaptation (for example code block background or table styling) a renderer/theme change instead of a router change.
 
 **Key difference from Gateway**: Upload accepts local `Path` objects instead of HTTP `UploadFile`. Artifact returns `(bytes, mime_type)` instead of HTTP Response. `update_mcp_config()` and `update_skill()` automatically invalidate the cached agent.
 
