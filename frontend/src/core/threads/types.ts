@@ -3,11 +3,46 @@ import type { Thread } from "@langchain/langgraph-sdk";
 
 import type { Todo } from "../todos";
 
+export interface FrameworkReviewState {
+  tool_call_id: string;
+  kind: "consulting_analysis";
+  status: "pending";
+  review_title: string;
+  instructions: string;
+  draft_markdown: string;
+}
+
+export interface StreamingFrameworkReviewMeta {
+  kind: "consulting_analysis";
+  status: "streaming";
+  review_title: string;
+  instructions: string;
+}
+
+export interface StreamingFrameworkReviewState
+  extends StreamingFrameworkReviewMeta {
+  draft_markdown: string;
+}
+
+export interface FrameworkReviewDraftStartedEvent {
+  type: "framework_review_draft_started";
+  kind: StreamingFrameworkReviewMeta["kind"];
+  review_title: string;
+  instructions: string;
+}
+
+export interface ConfirmedAnalysisFrameworkState {
+  tool_call_id: string;
+  markdown: string;
+}
+
 export interface AgentThreadState extends Record<string, unknown> {
   title: string;
   messages: BaseMessage[];
   artifacts: string[];
   todos?: Todo[];
+  framework_review?: FrameworkReviewState | null;
+  confirmed_analysis_framework?: ConfirmedAnalysisFrameworkState | null;
 }
 
 export interface AgentThread extends Thread<AgentThreadState> {}

@@ -1,7 +1,6 @@
 "use client";
 
 import type { Message } from "@langchain/langgraph-sdk";
-import type { UseStream } from "@langchain/langgraph-sdk/react";
 import { FilesIcon, XIcon } from "lucide-react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -28,10 +27,23 @@ import { TodoList } from "@/components/workspace/todo-list";
 import { Tooltip } from "@/components/workspace/tooltip";
 import { Welcome } from "@/components/workspace/welcome";
 import { useI18n } from "@/core/i18n/hooks";
+import {
+  extractContentFromMessage,
+  hasContent,
+  hasToolCalls,
+} from "@/core/messages/utils";
 import { useNotification } from "@/core/notification/hooks";
 import { useLocalSettings } from "@/core/settings";
-import { type AgentThreadState } from "@/core/threads";
-import { useSubmitThread, useThreadStream } from "@/core/threads/hooks";
+import {
+  type AgentThreadState,
+  type StreamingFrameworkReviewState,
+} from "@/core/threads";
+import {
+  type UseThreadStreamResult,
+  useConfirmFrameworkReview,
+  useSubmitThread,
+  useThreadStream,
+} from "@/core/threads/hooks";
 import {
   pathOfThread,
   textOfMessage,
@@ -39,6 +51,56 @@ import {
 import { uuid } from "@/core/utils/uuid";
 import { env } from "@/env";
 import { cn } from "@/lib/utils";
+
+function isFrameworkReviewRequestMessage(message: Message) {
+  if (message.type === "ai") {
+    return (message.tool_calls ?? []).some(
+      (toolCall) => toolCall.name === "request_framework_review",
+    );
+  }
+
+  return message.type === "tool" && message.name === "request_framework_review";
+}
+
+function isPlainAssistantTextMessage(message: Message) {
+  return message.type === "ai" && hasContent(message) && !hasToolCalls(message);
+}
+
+function findFrameworkReviewDraftMessageId({
+  messages,
+  includeStreamingFallback,
+}: {
+  messages: Message[];
+  includeStreamingFallback: boolean;
+}) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (!isFrameworkReviewRequestMessage(messages[index]!)) {
+      continue;
+    }
+
+    for (let candidateIndex = index - 1; candidateIndex >= 0; candidateIndex -= 1) {
+      const candidate = messages[candidateIndex]!;
+      if (isPlainAssistantTextMessage(candidate)) {
+        return candidate.id;
+      }
+    }
+
+    return undefined;
+  }
+
+  if (!includeStreamingFallback) {
+    return undefined;
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index]!;
+    if (isPlainAssistantTextMessage(candidate)) {
+      return candidate.id;
+    }
+  }
+
+  return undefined;
+}
 
 export default function ChatPage() {
   const { t } = useI18n();
@@ -117,7 +179,7 @@ export default function ChatPage() {
         });
       }
     },
-  }) as unknown as UseStream<AgentThreadState>;
+  }) as UseThreadStreamResult;
   useEffect(() => {
     if (thread.isLoading) setFinalState(null);
   }, [thread.isLoading]);
@@ -166,6 +228,76 @@ export default function ChatPage() {
   }, [artifactsOpen, artifacts]);
 
   const [todoListCollapsed, setTodoListCollapsed] = useState(true);
+  const [dismissedFrameworkReviewId, setDismissedFrameworkReviewId] =
+    useState<string | null>(null);
+  const [optimisticConfirmedFrameworkMarkdown, setOptimisticConfirmedFrameworkMarkdown] =
+    useState<string | null>(null);
+  const frameworkReview = thread.values.framework_review ?? null;
+  const activeFrameworkReview = useMemo(() => {
+    if (frameworkReview?.status !== "pending") {
+      return null;
+    }
+    if (frameworkReview.tool_call_id === dismissedFrameworkReviewId) {
+      return null;
+    }
+    return frameworkReview;
+  }, [dismissedFrameworkReviewId, frameworkReview]);
+  const isFrameworkReviewPending = activeFrameworkReview?.status === "pending";
+  const confirmedFrameworkMarkdown =
+    thread.values.confirmed_analysis_framework?.markdown ??
+    optimisticConfirmedFrameworkMarkdown;
+  const sourceMessages = useMemo(
+    () => ((finalState?.messages as Message[] | undefined) ?? thread.messages),
+    [finalState?.messages, thread.messages],
+  );
+  const frameworkReviewDraftMessageId = useMemo(
+    () =>
+      findFrameworkReviewDraftMessageId({
+        messages: sourceMessages,
+        includeStreamingFallback:
+          thread.isLoading && thread.streamingFrameworkReview !== null,
+      }),
+    [sourceMessages, thread.isLoading, thread.streamingFrameworkReview],
+  );
+  const visibleMessages = useMemo(() => {
+    if (!frameworkReviewDraftMessageId) {
+      return sourceMessages;
+    }
+
+    return sourceMessages.filter(
+      (message) => message.id !== frameworkReviewDraftMessageId,
+    );
+  }, [sourceMessages, frameworkReviewDraftMessageId]);
+  const streamingFrameworkReview =
+    useMemo<StreamingFrameworkReviewState | null>(() => {
+      if (!thread.isLoading || !thread.streamingFrameworkReview) {
+        return null;
+      }
+
+      const draftMessage = frameworkReviewDraftMessageId
+        ? sourceMessages.find(
+            (message) => message.id === frameworkReviewDraftMessageId,
+          )
+        : undefined;
+
+      return {
+        ...thread.streamingFrameworkReview,
+        draft_markdown: draftMessage
+          ? extractContentFromMessage(draftMessage)
+          : "",
+      };
+    }, [
+      frameworkReviewDraftMessageId,
+      sourceMessages,
+      thread.isLoading,
+      thread.streamingFrameworkReview,
+    ]);
+
+  useEffect(() => {
+    if (thread.values.confirmed_analysis_framework?.markdown) {
+      setOptimisticConfirmedFrameworkMarkdown(null);
+    }
+  }, [thread.values.confirmed_analysis_framework?.markdown]);
 
   const handleSubmit = useSubmitThread({
     isNewThread,
@@ -183,6 +315,43 @@ export default function ChatPage() {
       router.push(pathOfThread(threadId!));
     },
   });
+  const {
+    mutateAsync: confirmFrameworkReview,
+    isPending: isConfirmingFrameworkReview,
+  } = useConfirmFrameworkReview({
+    threadId,
+    thread,
+    threadContext: {
+      ...settings.context,
+      thinking_enabled: settings.context.mode !== "flash",
+      is_plan_mode:
+        settings.context.mode === "pro" || settings.context.mode === "ultra",
+      subagent_enabled: settings.context.mode === "ultra",
+      reasoning_effort: settings.context.reasoning_effort,
+    },
+    isNewThread,
+    continuePrompt: t.frameworkReview.continuePrompt,
+    confirmErrorMessage: t.frameworkReview.confirmError,
+    autoContinueErrorMessage: t.frameworkReview.autoContinueError,
+    afterSubmit() {
+      router.push(pathOfThread(threadId!));
+    },
+  });
+  const handleConfirmFrameworkReview = useCallback(
+    async (markdown: string) => {
+      if (!activeFrameworkReview) {
+        return;
+      }
+
+      setOptimisticConfirmedFrameworkMarkdown(markdown);
+      await confirmFrameworkReview({
+        toolCallId: activeFrameworkReview.tool_call_id,
+        markdown,
+      });
+      setDismissedFrameworkReviewId(activeFrameworkReview.tool_call_id);
+    },
+    [activeFrameworkReview, confirmFrameworkReview],
+  );
   const handleStop = useCallback(async () => {
     await thread.stop();
   }, [thread]);
@@ -237,11 +406,13 @@ export default function ChatPage() {
                   className={cn("size-full", !isNewThread && "pt-10")}
                   threadId={threadId}
                   thread={thread}
-                  messages={
-                    (finalState?.messages as Message[])
-                      ?? thread.messages
-                  }
+                  messages={visibleMessages}
                   paddingBottom={todoListCollapsed ? 160 : 280}
+                  streamingFrameworkReview={streamingFrameworkReview}
+                  frameworkReview={activeFrameworkReview}
+                  confirmedFrameworkMarkdown={confirmedFrameworkMarkdown}
+                  isConfirmingFrameworkReview={isConfirmingFrameworkReview}
+                  onConfirmFrameworkReview={handleConfirmFrameworkReview}
                 />
               </div>
               <div className="absolute right-0 bottom-0 left-0 z-30 flex justify-center px-4">
@@ -279,13 +450,18 @@ export default function ChatPage() {
                     extraHeader={
                       isNewThread && <Welcome mode={settings.context.mode} />
                     }
-                    disabled={env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true"}
+                    disabled={env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" || isFrameworkReviewPending}
                     onContextChange={(context) =>
                       setSettings("context", context)
                     }
                     onSubmit={handleSubmit}
                     onStop={handleStop}
                   />
+                  {isFrameworkReviewPending && (
+                    <div className="text-muted-foreground/80 w-full translate-y-12 text-center text-xs">
+                      {t.frameworkReview.completeReviewFirst}
+                    </div>
+                  )}
                   {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true" && (
                     <div className="text-muted-foreground/67 w-full translate-y-12 text-center text-xs">
                       {t.common.notAvailableInDemoMode}

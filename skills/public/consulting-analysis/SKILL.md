@@ -287,6 +287,43 @@ Assemble all outputs into a single, structured **Analysis Framework Document**:
 [Consolidate all P0/P1 data requirements across chapters into a structured task list for downstream data collection skills to execute]
 ```
 
+### Step 1.7: Mandatory Framework Review HITL
+
+After assembling the complete Analysis Framework document in Step 1.6, you **MUST** request user review before any downstream data collection or Phase 2 writing begins.
+
+#### Required Action
+
+- Call `start_framework_review_draft` immediately before you output the framework markdown
+- Output the complete framework as a normal assistant Markdown response so the draft can stream live in the review card
+- Call `request_framework_review` immediately after the framework is complete
+- Pass the **entire framework Markdown** via `framework_markdown`
+- Use a short `review_title` suitable for the review card header
+- Use `instructions` to explain what the user should do next
+- Keep the streamed framework content and `framework_markdown` identical
+- Do **NOT** proceed to data collection, chart generation, or report writing until the framework has been reviewed and confirmed
+
+#### Required Tool Pattern
+
+```python
+start_framework_review_draft(
+    review_title="Review Analysis Framework",
+    instructions="Please edit the framework directly and confirm it before I continue to the next step."
+)
+
+[output the complete Analysis Framework as the next assistant Markdown response]
+
+request_framework_review(
+    framework_markdown="[complete Analysis Framework markdown]",
+    review_title="Review Analysis Framework",
+    instructions="Please edit the framework directly and confirm it before I continue to the next step."
+)
+```
+
+#### Behavior After Review
+
+- Once the user confirms or edits the framework in the review UI, treat that confirmed framework as the authoritative Phase 1 output
+- All downstream data collection and report generation must follow the confirmed version, not the original draft
+
 ## Phase 1 Quality Checklist
 
 - [ ] Analysis framework covers all natural dimensions for the identified domain
@@ -298,12 +335,13 @@ Assemble all outputs into a single, structured **Analysis Framework Document**:
 - [ ] Data priorities (P0/P1/P2) are assigned realistically
 - [ ] The framework is actionable — a data collection agent can execute on the Search Keywords directly
 - [ ] Data Collection Task List is comprehensive and deduplicated
+- [ ] The complete framework is handed off via `request_framework_review` before downstream execution
 
 ---
 
 # Phase 1→2 Handoff: Data Collection & Chart Generation
 
-After the analysis framework is generated, it is handed off to **other data collection skills** (e.g., deep-research, data-analysis, web search agents) to:
+After the analysis framework is generated **and confirmed by the user**, it is handed off to **other data collection skills** (e.g., deep-research, data-analysis, web search agents) to:
 
 1. Execute the **Search Keywords** from each chapter's data requirements
 2. Collect quantitative data, qualitative insights, and source URLs
@@ -626,7 +664,7 @@ After data collection, user provides: Analysis Framework + Data Summary with bra
 
 ## Output Format
 
-- **Phase 1**: Output the complete Analysis Framework in **Markdown** format
+- **Phase 1**: Call `start_framework_review_draft`, generate the complete Analysis Framework in **Markdown** format as a normal assistant response, then submit that same Markdown through `request_framework_review` for user confirmation
 - **Phase 2**: Output the complete Report in **Markdown** format
 
 ## Settings

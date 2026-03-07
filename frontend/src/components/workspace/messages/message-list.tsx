@@ -18,12 +18,17 @@ import {
 import { useRehypeSplitWordsIntoSpans } from "@/core/rehype";
 import type { Subtask } from "@/core/tasks";
 import { useUpdateSubtask } from "@/core/tasks/context";
-import type { AgentThreadState } from "@/core/threads";
+import type {
+  AgentThreadState,
+  FrameworkReviewState,
+  StreamingFrameworkReviewState,
+} from "@/core/threads";
 import { cn } from "@/lib/utils";
 
 import { ArtifactFileList } from "../artifacts/artifact-file-list";
 import { StreamingIndicator } from "../streaming-indicator";
 
+import { FrameworkReviewCard } from "./framework-review-card";
 import { MarkdownContent } from "./markdown-content";
 import { MessageGroup } from "./message-group";
 import { MessageListItem } from "./message-list-item";
@@ -36,12 +41,22 @@ export function MessageList({
   thread,
   messages,
   paddingBottom = 160,
+  streamingFrameworkReview,
+  frameworkReview,
+  confirmedFrameworkMarkdown,
+  isConfirmingFrameworkReview = false,
+  onConfirmFrameworkReview,
 }: {
   className?: string;
   threadId: string;
   thread: UseStream<AgentThreadState>;
   messages: Message[];
   paddingBottom?: number;
+  streamingFrameworkReview?: StreamingFrameworkReviewState | null;
+  frameworkReview?: FrameworkReviewState | null;
+  confirmedFrameworkMarkdown?: string | null;
+  isConfirmingFrameworkReview?: boolean;
+  onConfirmFrameworkReview?: (markdown: string) => Promise<void>;
 }) {
   const { t } = useI18n();
   const rehypePlugins = useRehypeSplitWordsIntoSpans(thread.isLoading);
@@ -198,6 +213,31 @@ export function MessageList({
             />
           );
         })}
+        {frameworkReview?.status === "pending" &&
+          !thread.isLoading &&
+          onConfirmFrameworkReview && (
+            <FrameworkReviewCard
+              mode="pending"
+              review={frameworkReview}
+              rehypePlugins={rehypePlugins}
+              isConfirming={isConfirmingFrameworkReview}
+              onConfirm={onConfirmFrameworkReview}
+            />
+          )}
+        {!frameworkReview && streamingFrameworkReview && (
+          <FrameworkReviewCard
+            mode="streaming"
+            review={streamingFrameworkReview}
+            rehypePlugins={rehypePlugins}
+          />
+        )}
+        {!frameworkReview && !streamingFrameworkReview && confirmedFrameworkMarkdown && (
+          <FrameworkReviewCard
+            mode="confirmed"
+            markdown={confirmedFrameworkMarkdown}
+            rehypePlugins={rehypePlugins}
+          />
+        )}
         {thread.isLoading && <StreamingIndicator className="my-4" />}
         <div style={{ height: `${paddingBottom}px` }} />
       </ConversationContent>

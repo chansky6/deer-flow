@@ -401,6 +401,17 @@ function ToolCall({
         icon={MessageCircleQuestionMarkIcon}
       ></ChainOfThoughtStep>
     );
+  } else if (
+    name === "request_framework_review" ||
+    name === "start_framework_review_draft"
+  ) {
+    return (
+      <ChainOfThoughtStep
+        key={id}
+        label={t.toolCalls.reviewFramework}
+        icon={MessageCircleQuestionMarkIcon}
+      ></ChainOfThoughtStep>
+    );
   } else if (name === "write_todos") {
     return (
       <ChainOfThoughtStep

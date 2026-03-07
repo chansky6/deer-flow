@@ -6,6 +6,7 @@ from langchain_core.runnables import RunnableConfig
 
 from src.agents.lead_agent.prompt import apply_prompt_template
 from src.agents.middlewares.clarification_middleware import ClarificationMiddleware
+from src.agents.middlewares.framework_review_middleware import FrameworkReviewMiddleware
 from src.agents.middlewares.dangling_tool_call_middleware import DanglingToolCallMiddleware
 from src.agents.middlewares.memory_middleware import MemoryMiddleware
 from src.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
@@ -207,7 +208,8 @@ Being proactive with task management demonstrates thoroughness and ensures all r
 # TodoListMiddleware should be before ClarificationMiddleware to allow todo management
 # TitleMiddleware generates title after first exchange
 # MemoryMiddleware queues conversation for memory update (after TitleMiddleware)
-# ViewImageMiddleware should be before ClarificationMiddleware to inject image details before LLM
+# ViewImageMiddleware should be before FrameworkReviewMiddleware / ClarificationMiddleware to inject image details before LLM
+# FrameworkReviewMiddleware should be near the end to intercept structured framework review requests
 # ClarificationMiddleware should be last to intercept clarification requests after model calls
 def _build_middlewares(config: RunnableConfig, model_name: str | None):
     """Build middleware chain based on runtime configuration.
@@ -249,6 +251,8 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None):
     if subagent_enabled:
         max_concurrent_subagents = config.get("configurable", {}).get("max_concurrent_subagents", 3)
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
+
+    middlewares.append(FrameworkReviewMiddleware())
 
     # ClarificationMiddleware should always be last
     middlewares.append(ClarificationMiddleware())

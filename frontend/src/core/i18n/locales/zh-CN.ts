@@ -201,6 +201,7 @@ export const zhCN: Translations = {
     executeCommand: "执行命令",
     presentFiles: "展示文件",
     needYourHelp: "需要你的协助",
+    reviewFramework: "审阅框架",
     useTool: (toolName: string) => `使用 “${toolName}” 工具`,
     searchFor: (query: string) => `搜索 “${query}”`,
     searchForRelatedInfo: "搜索相关信息",
@@ -214,6 +215,26 @@ export const zhCN: Translations = {
     clickToViewContent: "点击查看文件内容",
     writeTodos: "更新 To-do 列表",
     skillInstallTooltip: "安装技能并使其可在 DeerFlow 中使用",
+  },
+
+  frameworkReview: {
+    title: "审阅分析框架",
+    defaultInstructions: "请直接编辑下面的分析框架，确认后再继续后续流程。",
+    helperText: "你可以直接修改 Markdown 框架内容。确认后会保存当前版本，并自动继续下一步。",
+    rawMarkdown: "Markdown",
+    streamingStatus: "草稿生成中...",
+    streamingDescription:
+      "框架草稿会实时显示在这里。生成过程中你可以在渲染预览和原始 Markdown 之间切换查看。",
+    streamingEmptyState: "框架草稿生成后会实时显示在这里。",
+    restoreDraft: "恢复草稿",
+    confirmAndContinue: "确认并继续",
+    confirming: "确认中...",
+    confirmedTitle: "已确认分析框架",
+    confirmedDescription: "这里保留已确认框架的 Markdown 展示，后续流程会基于此版本继续生成。",
+    completeReviewFirst: "请先在审阅卡片中确认分析框架，然后再继续对话。",
+    continuePrompt: "请基于已确认的分析框架继续下一步。",
+    confirmError: "确认分析框架失败。",
+    autoContinueError: "框架已保存，但自动继续失败；你可以手动继续。",
   },
 
   subtasks: {

@@ -59,15 +59,16 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 ### Data Flow
 
 1. User input → thread hooks (`core/threads/hooks.ts`) → LangGraph SDK streaming
-2. Stream events update thread state (messages, artifacts, todos)
+2. Stream events update thread state (messages, artifacts, todos, framework_review, confirmed_analysis_framework) and can also drive local-only UI state such as streaming framework-review drafts
 3. TanStack Query manages server state; localStorage stores user settings
-4. Components subscribe to thread state and render updates
+4. Components subscribe to thread state and render updates, including inline HITL review cards
 
 ### Key Patterns
 
 - **Server Components by default**, `"use client"` only for interactive components
-- **Thread hooks** (`useThreadStream`, `useSubmitThread`, `useThreads`) are the primary API interface
+- **Thread hooks** (`useThreadStream`, `useSubmitThread`, `useConfirmFrameworkReview`, `useThreads`) are the primary API interface
 - **LangGraph client** is a singleton obtained via `getAPIClient()` in `core/api/`
+- **Framework review HITL** opens `components/workspace/messages/framework-review-card.tsx` as soon as a `framework_review_draft_started` custom event arrives, mirrors the live markdown draft there, switches to editable pending review once `thread.values.framework_review` is set, then persists `confirmed_analysis_framework` and keeps the confirmed card visible in read-only mode after auto-continuing
 - **Environment validation** uses `@t3-oss/env-nextjs` with Zod schemas (`src/env.js`). Skip with `SKIP_ENV_VALIDATION=1`
 
 ## Code Style

@@ -204,6 +204,7 @@ export const enUS: Translations = {
     executeCommand: "Execute command",
     presentFiles: "Present files",
     needYourHelp: "Need your help",
+    reviewFramework: "Review framework",
     useTool: (toolName: string) => `Use "${toolName}" tool`,
     searchFor: (query: string) => `Search for "${query}"`,
     searchForRelatedInfo: "Search for related information",
@@ -218,6 +219,30 @@ export const enUS: Translations = {
     clickToViewContent: "Click to view file content",
     writeTodos: "Update to-do list",
     skillInstallTooltip: "Install skill and make it available to DeerFlow",
+  },
+
+  frameworkReview: {
+    title: "Review Analysis Framework",
+    defaultInstructions:
+      "Review and edit the draft analysis framework below, then confirm to continue.",
+    helperText:
+      "Edit the framework directly here. Confirming will save this version and continue the workflow automatically.",
+    rawMarkdown: "Markdown",
+    streamingStatus: "Generating draft...",
+    streamingDescription:
+      "The framework draft appears live here. You can switch between rendered preview and raw Markdown while it is being generated.",
+    streamingEmptyState: "The framework draft will appear here as it streams.",
+    restoreDraft: "Restore draft",
+    confirmAndContinue: "Confirm and continue",
+    confirming: "Confirming...",
+    confirmedTitle: "Confirmed Analysis Framework",
+    confirmedDescription: "This confirmed framework remains visible here. Subsequent workflow steps use this version as context.",
+    completeReviewFirst:
+      "Please confirm the analysis framework in the review card before continuing.",
+    continuePrompt: "Please continue using the confirmed analysis framework.",
+    confirmError: "Failed to confirm the analysis framework.",
+    autoContinueError:
+      "The framework was saved, but automatic continuation failed. You can continue manually.",
   },
 
   // Subtasks

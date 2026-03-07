@@ -18,6 +18,20 @@ class ViewedImageData(TypedDict):
     mime_type: str
 
 
+class FrameworkReviewState(TypedDict):
+    tool_call_id: str
+    kind: str
+    status: str
+    review_title: str
+    instructions: str
+    draft_markdown: str
+
+
+class ConfirmedAnalysisFrameworkState(TypedDict):
+    tool_call_id: str
+    markdown: str
+
+
 def merge_artifacts(existing: list[str] | None, new: list[str] | None) -> list[str]:
     """Reducer for artifacts list - merges and deduplicates artifacts."""
     if existing is None:
@@ -53,3 +67,5 @@ class ThreadState(AgentState):
     todos: NotRequired[list | None]
     uploaded_files: NotRequired[list[dict] | None]
     viewed_images: Annotated[dict[str, ViewedImageData], merge_viewed_images]  # image_path -> {base64, mime_type}
+    framework_review: NotRequired[FrameworkReviewState | None]
+    confirmed_analysis_framework: NotRequired[ConfirmedAnalysisFrameworkState | None]

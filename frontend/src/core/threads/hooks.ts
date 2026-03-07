@@ -16,7 +16,57 @@ import type {
   AgentThread,
   AgentThreadContext,
   AgentThreadState,
+  FrameworkReviewDraftStartedEvent,
+  StreamingFrameworkReviewMeta,
 } from "./types";
+
+export type UseThreadStreamResult = UseStream<AgentThreadState> & {
+  streamingFrameworkReview: StreamingFrameworkReviewMeta | null;
+};
+
+async function submitThreadTextMessage({
+  thread,
+  text,
+  threadId,
+  submitThreadId,
+  threadContext,
+}: {
+  thread: UseStream<AgentThreadState>;
+  text: string;
+  threadId: string | null | undefined;
+  submitThreadId?: string;
+  threadContext: Omit<AgentThreadContext, "thread_id">;
+}) {
+  await thread.submit(
+    {
+      messages: [
+        {
+          type: "human",
+          content: [
+            {
+              type: "text",
+              text,
+            },
+          ],
+        },
+      ] as HumanMessage[],
+    },
+    {
+      threadId: submitThreadId,
+      streamSubgraphs: true,
+      streamResumable: true,
+      streamMode: ["values", "messages-tuple", "custom"],
+      config: {
+        recursion_limit: 1000,
+      },
+      context: {
+        ...threadContext,
+        thread_id: threadId,
+      },
+    },
+  );
+}
+
 
 export function useThreadStream({
   threadId,
@@ -29,6 +79,8 @@ export function useThreadStream({
 }) {
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
+  const [streamingFrameworkReview, setStreamingFrameworkReview] =
+    useState<StreamingFrameworkReviewMeta | null>(null);
 
   // Demo thread IDs from showcase
   const DEMO_THREAD_IDS = [
@@ -46,8 +98,8 @@ export function useThreadStream({
   useEffect(() => {
     if (isDemoThread && threadId) {
       fetch(`/demo/threads/${threadId}/thread.json`)
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
           if (data?.values) {
             setDemoState(data.values);
             onFinish?.(data.values);
@@ -69,6 +121,22 @@ export function useThreadStream({
         typeof event === "object" &&
         event !== null &&
         "type" in event &&
+        event.type === "framework_review_draft_started"
+      ) {
+        const e = event as FrameworkReviewDraftStartedEvent;
+        setStreamingFrameworkReview({
+          kind: e.kind,
+          status: "streaming",
+          review_title: e.review_title,
+          instructions: e.instructions,
+        });
+        return;
+      }
+
+      if (
+        typeof event === "object" &&
+        event !== null &&
+        "type" in event &&
         event.type === "task_running"
       ) {
         const e = event as {
@@ -80,6 +148,7 @@ export function useThreadStream({
       }
     },
     onFinish(state) {
+      setStreamingFrameworkReview(null);
       onFinish?.(state.values);
       // void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
       queryClient.setQueriesData(
@@ -107,18 +176,19 @@ export function useThreadStream({
 
   // Return demo state if available
   if (demoState) {
-    return {
+    return Object.assign(thread, {
+      streamingFrameworkReview: null,
       values: demoState,
       messages: demoState.messages || [],
       isLoading: false,
       isThreadLoading: false,
       history: [],
-      submit: thread.submit,
-      stop: thread.stop,
-    } as any;
+    });
   }
 
-  return thread;
+  return Object.assign(thread, {
+    streamingFrameworkReview,
+  });
 }
 
 export function useSubmitThread({
@@ -193,34 +263,13 @@ export function useSubmitThread({
         }
       }
 
-      await thread.submit(
-        {
-          messages: [
-            {
-              type: "human",
-              content: [
-                {
-                  type: "text",
-                  text,
-                },
-              ],
-            },
-          ] as HumanMessage[],
-        },
-        {
-          threadId: isNewThread ? threadId! : undefined,
-          streamSubgraphs: true,
-          streamResumable: true,
-          streamMode: ["values", "messages-tuple", "custom"],
-          config: {
-            recursion_limit: 1000,
-          },
-          context: {
-            ...threadContext,
-            thread_id: threadId,
-          },
-        },
-      );
+      await submitThreadTextMessage({
+        thread,
+        text,
+        threadId,
+        submitThreadId: isNewThread ? threadId! : undefined,
+        threadContext,
+      });
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
       afterSubmit?.();
     },
@@ -305,6 +354,74 @@ export function useRenameThread() {
           });
         },
       );
+    },
+  });
+}
+
+
+export function useConfirmFrameworkReview({
+  threadId,
+  thread,
+  threadContext,
+  isNewThread,
+  continuePrompt,
+  confirmErrorMessage,
+  autoContinueErrorMessage,
+  afterSubmit,
+}: {
+  threadId: string | null | undefined;
+  thread: UseStream<AgentThreadState>;
+  threadContext: Omit<AgentThreadContext, "thread_id">;
+  isNewThread: boolean;
+  continuePrompt: string;
+  confirmErrorMessage: string;
+  autoContinueErrorMessage: string;
+  afterSubmit?: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const apiClient = getAPIClient();
+
+  return useMutation({
+    mutationFn: async ({
+      toolCallId,
+      markdown,
+    }: {
+      toolCallId: string;
+      markdown: string;
+    }) => {
+      if (!threadId) {
+        throw new Error(confirmErrorMessage);
+      }
+
+      try {
+        await apiClient.threads.updateState(threadId, {
+          values: {
+            framework_review: null,
+            confirmed_analysis_framework: {
+              tool_call_id: toolCallId,
+              markdown,
+            },
+          },
+        });
+      } catch (error) {
+        console.error("Failed to confirm framework review:", error);
+        toast.error(confirmErrorMessage);
+        throw error;
+      }
+
+      void submitThreadTextMessage({
+        thread,
+        text: continuePrompt,
+        threadId,
+        submitThreadId: isNewThread ? threadId : undefined,
+        threadContext,
+      }).catch((error) => {
+        console.error("Failed to continue automatically after framework confirmation:", error);
+        toast.error(autoContinueErrorMessage);
+      });
+
+      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+      afterSubmit?.();
     },
   });
 }

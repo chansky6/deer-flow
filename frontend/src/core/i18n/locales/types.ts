@@ -152,6 +152,7 @@ export interface Translations {
     executeCommand: string;
     presentFiles: string;
     needYourHelp: string;
+    reviewFramework: string;
     useTool: (toolName: string) => string;
     searchForRelatedInfo: string;
     searchForRelatedImages: string;
@@ -165,6 +166,26 @@ export interface Translations {
     clickToViewContent: string;
     writeTodos: string;
     skillInstallTooltip: string;
+  };
+
+  // Framework review
+  frameworkReview: {
+    title: string;
+    defaultInstructions: string;
+    helperText: string;
+    rawMarkdown: string;
+    streamingStatus: string;
+    streamingDescription: string;
+    streamingEmptyState: string;
+    restoreDraft: string;
+    confirmAndContinue: string;
+    confirming: string;
+    confirmedTitle: string;
+    confirmedDescription: string;
+    completeReviewFirst: string;
+    continuePrompt: string;
+    confirmError: string;
+    autoContinueError: string;
   };
 
   // Subtasks
