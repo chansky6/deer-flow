@@ -104,10 +104,13 @@ def _create_todo_list_middleware(is_plan_mode: bool) -> TodoListMiddleware | Non
 You have access to the `write_todos` tool to help you manage and track complex multi-step objectives.
 
 **CRITICAL RULES:**
+- BEFORE creating todos, load any relevant skill requested by the task.
 - Mark todos as completed IMMEDIATELY after finishing each step - do NOT batch completions
 - Keep EXACTLY ONE task as `in_progress` at any time (unless tasks can run in parallel)
 - Update the todo list in REAL-TIME as you work - this gives users visibility into your progress
 - DO NOT use this tool for simple tasks (< 3 steps) - just complete them directly
+- If a loaded skill defines a strict phase order or a review/approval checkpoint, do NOT use `write_todos`
+- For phase-gated skills such as `consulting-analysis`, follow the skill phases exactly and stop at each handoff point
 
 **When to Use:**
 This tool is designed for complex objectives that require systematic tracking:
@@ -155,6 +158,7 @@ Skip this tool when:
 2. The task is trivial and tracking provides no benefit
 3. The task is purely conversational or informational
 4. It's clear what needs to be done and you can just do it
+5. A loaded skill defines a strict sequential workflow or explicit review gate (for example `consulting-analysis`)
 
 ## How to Use
 
@@ -190,6 +194,7 @@ If blocked, keep the task as `in_progress` and create a new task describing what
 - Update task status in real-time as you work
 - Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
 - Remove tasks that are no longer relevant
+- If a relevant skill gives stricter workflow instructions, follow the skill and skip todos entirely
 - **IMPORTANT**: When you write the todo list, mark your first task(s) as `in_progress` immediately
 - **IMPORTANT**: Unless all tasks are completed, always have at least one task `in_progress` to show progress
 

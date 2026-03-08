@@ -76,7 +76,7 @@ Config lookup order: explicit path → env var (`DEER_FLOW_CONFIG_PATH` / `DEER_
 ### Backend (`backend/src/`)
 
 - **`agents/lead_agent/`** — Main agent factory (`make_lead_agent`), registered in `langgraph.json`. Dynamic model selection, tool assembly, system prompt generation.
-- **`agents/middlewares/`** — 11 ordered middleware components that wrap the agent lifecycle (thread data, uploads, sandbox, dangling tool calls, summarization, todos, title, memory, view image, subagent limit, clarification). Order matters — see `backend/CLAUDE.md` for the full chain.
+- **`agents/middlewares/`** — 11 ordered middleware components that wrap the agent lifecycle (thread data, uploads, sandbox, dangling tool calls, summarization, todos, title, memory, view image, subagent limit, clarification). Order matters, and stricter skill workflows override generic todo guidance — see `backend/CLAUDE.md` for the full chain.
 - **`agents/memory/`** — Persistent memory with LLM-based fact extraction, debounced queue, atomic file I/O. Stored in `backend/.deer-flow/memory.json`.
 - **`gateway/`** — FastAPI app with routers for models, MCP, skills, memory, uploads, artifacts.
 - **`sandbox/`** — Abstract sandbox interface with local and Docker providers. Virtual path system maps `/mnt/user-data/` and `/mnt/skills/` to host paths.

@@ -125,7 +125,7 @@ Middlewares execute in strict order in `src/agents/lead_agent/agent.py`:
 3. **SandboxMiddleware** - Acquires sandbox, stores `sandbox_id` in state
 4. **DanglingToolCallMiddleware** - Injects placeholder ToolMessages for AIMessage tool_calls that lack responses (e.g., due to user interruption)
 5. **SummarizationMiddleware** - Context reduction when approaching token limits (optional, if enabled)
-6. **TodoListMiddleware** - Task tracking with `write_todos` tool (optional, if plan_mode)
+6. **TodoListMiddleware** - Task tracking with `write_todos` tool (optional, if plan_mode). This guidance is subordinate to stricter skill workflows; `consulting-analysis` explicitly disables todo-style planning so it can preserve its Phase 1 → review → Phase 2 order.
 7. **TitleMiddleware** - Auto-generates thread title after first complete exchange
 8. **MemoryMiddleware** - Queues conversations for async memory update (filters to user + final AI responses)
 9. **ViewImageMiddleware** - Injects base64 image data before LLM call (conditional on vision support)

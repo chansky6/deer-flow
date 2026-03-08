@@ -14,6 +14,28 @@ This skill produces professional, consulting-grade research reports in Markdown 
 
 The output adheres to McKinsey/BCG consulting voice standards. The report language follows the `output_locale` setting (default: `zh_CN` for Chinese).
 
+## Workflow Control Rules
+
+This skill uses a **strict sequential workflow**. Follow these rules exactly:
+
+1. **Do NOT use `write_todos` or TodoList planning for this skill.** The generic todo workflow conflicts with this skill's required phase gates.
+2. **Execute phases in order only**: complete **Phase 1 → framework review / confirmation → Phase 2**.
+3. **Never mix phases in the same response.** Do not start report writing while still drafting or revising the analysis framework.
+4. **After Phase 1 is complete, stop for review.** Use the framework review flow and wait for the confirmed framework before continuing.
+5. **Phase 2 can start only after one of these is true**:
+   - the system has injected a confirmed framework for the current thread, or
+   - the user explicitly provides a finalized framework plus the required data package.
+6. If the user request does not contain enough information for the current phase, ask clarification for the missing inputs instead of improvising or skipping ahead.
+
+### Required Phase 1 Handoff
+
+When you finish drafting the Phase 1 framework:
+
+- First call `start_framework_review_draft`
+- Then output the **complete framework markdown only** in the very next assistant response
+- Do not add extra narrative, execution plans, or todo lists around that framework draft
+- End the turn and wait for the framework review / confirmation step before proceeding
+
 ## Data Authenticity Protocol
 
 **Strict Adherence Rule**: All data presented in the report and visualized in charts MUST be derived directly from the provided **Data Summary** or **External Search Findings**.
@@ -40,6 +62,8 @@ The output adheres to McKinsey/BCG consulting voice standards. The report langua
 - User provides data summaries, analysis frameworks, or chart files to be synthesized into a report
 - User needs a professional consulting-style research report
 - The task involves transforming research findings into structured strategic narratives
+
+**Execution priority for this skill:** Phase order and review gates override generic todo/planning behaviors.
 
 ---
 

@@ -135,3 +135,21 @@ def test_build_middlewares_uses_resolved_model_name_for_vision(monkeypatch):
     )
 
     assert any(isinstance(m, lead_agent_module.ViewImageMiddleware) for m in middlewares)
+
+
+def test_create_todo_list_middleware_skips_phase_gated_skills(monkeypatch):
+    captured: dict[str, str] = {}
+
+    class FakeTodoListMiddleware:
+        def __init__(self, *, system_prompt, tool_description):
+            captured["system_prompt"] = system_prompt
+            captured["tool_description"] = tool_description
+
+    monkeypatch.setattr(lead_agent_module, "TodoListMiddleware", FakeTodoListMiddleware)
+
+    middleware = lead_agent_module._create_todo_list_middleware(True)
+
+    assert isinstance(middleware, FakeTodoListMiddleware)
+    assert "load any relevant skill" in captured["system_prompt"]
+    assert "consulting-analysis" in captured["system_prompt"]
+    assert "strict sequential workflow" in captured["tool_description"]
