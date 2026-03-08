@@ -70,13 +70,13 @@ export function MessageList({
   const renderMessageGroups = (groupedMessages: Message[]) =>
     groupMessages(groupedMessages, (group) => {
       if (group.type === "human" || group.type === "assistant") {
-        return (
+        return group.messages.map((message, index) => (
           <MessageListItem
-            key={group.id}
-            message={group.messages[0]!}
+            key={`${group.id}/${message.id ?? index}`}
+            message={message}
             isLoading={thread.isLoading}
           />
-        );
+        ));
       } else if (group.type === "assistant:clarification") {
         const message = group.messages[0];
         if (message && hasContent(message)) {

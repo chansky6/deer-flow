@@ -98,14 +98,32 @@ export function useThreadStream({
 }: ThreadStreamOptions) {
   const { t } = useI18n();
   const [_threadId, setThreadId] = useState<string | null>(threadId ?? null);
+  const threadIdRef = useRef<string | null>(threadId ?? null);
   const startedRef = useRef(false);
+  const listeners = useRef({
+    onStart,
+    onFinish,
+    onToolEnd,
+  });
 
   useEffect(() => {
-    if (_threadId && _threadId !== threadId) {
+    listeners.current = { onStart, onFinish, onToolEnd };
+  }, [onStart, onFinish, onToolEnd]);
+
+  useEffect(() => {
+    if (threadIdRef.current !== threadId) {
+      threadIdRef.current = threadId ?? null;
       setThreadId(threadId ?? null);
       startedRef.current = false;
     }
-  }, [threadId, _threadId]);
+  }, [threadId]);
+
+  const handleStart = useCallback((id: string) => {
+    if (!startedRef.current) {
+      listeners.current.onStart?.(id);
+      startedRef.current = true;
+    }
+  }, []);
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
@@ -131,12 +149,12 @@ export function useThreadStream({
         .then((data) => {
           if (data?.values) {
             setDemoState(data.values);
-            onFinish?.(data.values);
+            listeners.current.onFinish?.(data.values);
           }
         })
         .catch(() => setDemoState(null));
     }
-  }, [isDemoThread, threadId, onFinish]);
+  }, [isDemoThread, threadId]);
 
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
@@ -146,17 +164,44 @@ export function useThreadStream({
     fetchStateHistory: isDemoThread ? false : { limit: 1 },
     onCreated(meta) {
       setThreadId(meta.thread_id);
-      if (!startedRef.current) {
-        onStart?.(meta.thread_id);
-        startedRef.current = true;
-      }
+      threadIdRef.current = meta.thread_id;
+      handleStart(meta.thread_id);
     },
     onLangChainEvent(event) {
       if (event.event === "on_tool_end") {
-        onToolEnd?.({
+        listeners.current.onToolEnd?.({
           name: event.name,
           data: event.data,
         });
+      }
+    },
+    onUpdateEvent(data) {
+      const updates: Array<Partial<AgentThreadState> | null> = Object.values(
+        data || {},
+      );
+      for (const update of updates) {
+        if (update && "title" in update && update.title) {
+          void queryClient.setQueriesData(
+            {
+              queryKey: ["threads", "search"],
+              exact: false,
+            },
+            (oldData: Array<AgentThread> | undefined) => {
+              return oldData?.map((t) => {
+                if (t.thread_id === threadIdRef.current) {
+                  return {
+                    ...t,
+                    values: {
+                      ...t.values,
+                      title: update.title,
+                    },
+                  };
+                }
+                return t;
+              });
+            },
+          );
+        }
       }
     },
     onCustomEvent(event: unknown) {
@@ -192,15 +237,15 @@ export function useThreadStream({
     },
     onFinish(state) {
       setStreamingFrameworkReview(null);
-      onFinish?.(state.values);
+      listeners.current.onFinish?.(state.values);
       queryClient.setQueriesData(
         {
           queryKey: ["threads", "search"],
           exact: false,
         },
-        (oldData: Array<AgentThread>) => {
-          return oldData.map((t) => {
-            if (t.thread_id === (_threadId ?? threadId)) {
+        (oldData: Array<AgentThread> | undefined) => {
+          return oldData?.map((t) => {
+            if (t.thread_id === threadIdRef.current) {
               return {
                 ...t,
                 values: {
@@ -266,10 +311,7 @@ export function useThreadStream({
       }
       setOptimisticMessages(newOptimistic);
 
-      if (!startedRef.current) {
-        onStart?.(targetThreadId);
-        startedRef.current = true;
-      }
+      handleStart(targetThreadId);
 
       let uploadedFileInfo: UploadedFileInfo[] = [];
 
@@ -396,7 +438,7 @@ export function useThreadStream({
         throw error;
       }
     },
-    [thread, t.uploads.uploadingFiles, onStart, context, queryClient],
+    [thread, t.uploads.uploadingFiles, handleStart, context, queryClient],
   );
 
   const threadWithMeta = Object.assign(thread, {
