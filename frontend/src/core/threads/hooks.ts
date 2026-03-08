@@ -97,7 +97,9 @@ export function useThreadStream({
   onToolEnd,
 }: ThreadStreamOptions) {
   const { t } = useI18n();
-  const [_threadId, setThreadId] = useState<string | null>(threadId ?? null);
+  const [onStreamThreadId, setOnStreamThreadId] = useState<
+    string | null | undefined
+  >(() => threadId);
   const threadIdRef = useRef<string | null>(threadId ?? null);
   const startedRef = useRef(false);
   const listeners = useRef({
@@ -111,19 +113,29 @@ export function useThreadStream({
   }, [onStart, onFinish, onToolEnd]);
 
   useEffect(() => {
-    if (threadIdRef.current !== threadId) {
-      threadIdRef.current = threadId ?? null;
-      setThreadId(threadId ?? null);
+    const normalizedThreadId = threadId ?? null;
+    if (threadIdRef.current !== normalizedThreadId) {
+      threadIdRef.current = normalizedThreadId;
       startedRef.current = false;
+      setOnStreamThreadId(normalizedThreadId);
     }
   }, [threadId]);
 
-  const handleStart = useCallback((id: string) => {
+  const handleOnStart = useCallback((id: string) => {
     if (!startedRef.current) {
       listeners.current.onStart?.(id);
       startedRef.current = true;
     }
   }, []);
+
+  const handleStreamStart = useCallback(
+    (nextThreadId: string) => {
+      threadIdRef.current = nextThreadId;
+      setOnStreamThreadId(nextThreadId);
+      handleOnStart(nextThreadId);
+    },
+    [handleOnStart],
+  );
 
   const queryClient = useQueryClient();
   const updateSubtask = useUpdateSubtask();
@@ -159,13 +171,11 @@ export function useThreadStream({
   const thread = useStream<AgentThreadState>({
     client: getAPIClient(isMock),
     assistantId: "lead_agent",
-    threadId: isDemoThread ? undefined : _threadId,
+    threadId: isDemoThread ? undefined : onStreamThreadId,
     reconnectOnMount: !isDemoThread,
     fetchStateHistory: isDemoThread ? false : { limit: 1 },
     onCreated(meta) {
-      setThreadId(meta.thread_id);
-      threadIdRef.current = meta.thread_id;
-      handleStart(meta.thread_id);
+      handleStreamStart(meta.thread_id);
     },
     onLangChainEvent(event) {
       if (event.event === "on_tool_end") {
@@ -311,7 +321,7 @@ export function useThreadStream({
       }
       setOptimisticMessages(newOptimistic);
 
-      handleStart(targetThreadId);
+      handleOnStart(targetThreadId);
 
       let uploadedFileInfo: UploadedFileInfo[] = [];
 
@@ -438,7 +448,7 @@ export function useThreadStream({
         throw error;
       }
     },
-    [thread, t.uploads.uploadingFiles, handleStart, context, queryClient],
+    [thread, handleOnStart, t.uploads.uploadingFiles, context, queryClient],
   );
 
   const threadWithMeta = Object.assign(thread, {
