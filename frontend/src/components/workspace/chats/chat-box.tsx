@@ -50,11 +50,12 @@ const ChatBox: React.FC<{ children: React.ReactNode; threadId: string }> = ({
     // Update artifacts from the current thread
     setArtifacts(thread.values.artifacts);
 
-    // Deselect if the currently selected artifact no longer exists
-    if (
+    const selectedArtifactMissingFromThread =
       selectedArtifact &&
-      !thread.values.artifacts?.includes(selectedArtifact)
-    ) {
+      !selectedArtifact.startsWith("write-file:") &&
+      !thread.values.artifacts?.includes(selectedArtifact);
+
+    if (selectedArtifactMissingFromThread) {
       deselect();
     }
 

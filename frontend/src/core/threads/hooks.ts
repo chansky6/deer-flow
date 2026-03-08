@@ -1,4 +1,3 @@
-import type { HumanMessage } from "@langchain/core/messages";
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 import type { ThreadsClient } from "@langchain/langgraph-sdk/client";
 import { useStream, type UseStream } from "@langchain/langgraph-sdk/react";
@@ -63,14 +62,9 @@ async function submitThreadTextMessage({
       messages: [
         {
           type: "human",
-          content: [
-            {
-              type: "text",
-              text,
-            },
-          ],
-        },
-      ] as HumanMessage[],
+          content: text ? [{ type: "text", text }] : "",
+        } satisfies Message,
+      ],
     },
     {
       threadId: submitThreadId,
