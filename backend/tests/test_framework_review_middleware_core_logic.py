@@ -175,3 +175,147 @@ class TestFrameworkReviewMiddlewareCoreLogic:
         request.override.assert_not_called()
         handler.assert_called_once_with(request)
         assert result == "handled"
+
+
+    def test_after_model_auto_interrupts_after_streamed_framework_draft(self):
+        middleware = FrameworkReviewMiddleware()
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "start_framework_review_draft",
+                            "id": "tc-start-1",
+                            "args": {
+                                "review_title": "Review Analysis Framework",
+                                "instructions": "Please edit before I continue.",
+                            },
+                        }
+                    ],
+                ),
+                ToolMessage(
+                    content="Framework review draft started. Output the framework markdown next.",
+                    tool_call_id="tc-start-1",
+                    name="start_framework_review_draft",
+                ),
+                AIMessage(content="# Analysis Framework\n\n## Chapter 1"),
+            ]
+        }
+
+        result = middleware.after_model(state, MagicMock())
+
+        assert result is not None
+        assert result["jump_to"] == "end"
+        assert result["framework_review"] == {
+            "tool_call_id": "tc-start-1",
+            "kind": "consulting_analysis",
+            "status": "pending",
+            "review_title": "Review Analysis Framework",
+            "instructions": "Please edit before I continue.",
+            "draft_markdown": "# Analysis Framework\n\n## Chapter 1",
+        }
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], ToolMessage)
+        assert result["messages"][0].name == "request_framework_review"
+        assert result["messages"][0].tool_call_id == "tc-start-1"
+        assert result["messages"][0].content == "Framework review requested."
+
+    def test_after_model_auto_interrupts_when_framework_draft_and_tool_calls_share_ai_message(self):
+        middleware = FrameworkReviewMiddleware()
+        state = {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": "start_framework_review_draft",
+                            "id": "tc-start-2",
+                            "args": {
+                                "review_title": "Review Analysis Framework",
+                                "instructions": "Please edit before I continue.",
+                            },
+                        }
+                    ],
+                ),
+                ToolMessage(
+                    content="Framework review draft started. Output the framework markdown next.",
+                    tool_call_id="tc-start-2",
+                    name="start_framework_review_draft",
+                ),
+                AIMessage(
+                    content="# Analysis Framework\n\n## Chapter 1",
+                    tool_calls=[
+                        {
+                            "name": "web_search",
+                            "id": "tc-search-1",
+                            "args": {"query": "should not run"},
+                        }
+                    ],
+                ),
+            ]
+        }
+
+        result = middleware.after_model(state, MagicMock())
+
+        assert result is not None
+        assert result["jump_to"] == "end"
+        assert result["framework_review"] == {
+            "tool_call_id": "tc-start-2",
+            "kind": "consulting_analysis",
+            "status": "pending",
+            "review_title": "Review Analysis Framework",
+            "instructions": "Please edit before I continue.",
+            "draft_markdown": "# Analysis Framework\n\n## Chapter 1",
+        }
+        assert len(result["messages"]) == 1
+        assert isinstance(result["messages"][0], ToolMessage)
+        assert result["messages"][0].name == "request_framework_review"
+        assert result["messages"][0].tool_call_id == "tc-start-2"
+
+    def test_after_model_skips_auto_interrupt_when_latest_ai_message_has_tool_calls_without_start_marker(self):
+        middleware = FrameworkReviewMiddleware()
+        state = {
+            "messages": [
+                AIMessage(
+                    content="# Analysis Framework",
+                    tool_calls=[
+                        {
+                            "name": "request_framework_review",
+                            "id": "tc-review-1",
+                            "args": {},
+                        }
+                    ],
+                )
+            ]
+        }
+
+        result = middleware.after_model(state, MagicMock())
+
+        assert result is None
+
+    def test_after_model_skips_auto_interrupt_without_start_marker(self):
+        middleware = FrameworkReviewMiddleware()
+        state = {
+            "messages": [
+                AIMessage(content="# Analysis Framework\n\n## Chapter 1"),
+            ]
+        }
+
+        result = middleware.after_model(state, MagicMock())
+
+        assert result is None
+
+    def test_after_model_skips_auto_interrupt_when_review_or_confirmation_already_exists(self):
+        middleware = FrameworkReviewMiddleware()
+        state_with_pending_review = {
+            "framework_review": {"status": "pending"},
+            "messages": [AIMessage(content="# Analysis Framework")],
+        }
+        state_with_confirmed_framework = {
+            "confirmed_analysis_framework": {"tool_call_id": "tc", "markdown": "# Confirmed"},
+            "messages": [AIMessage(content="# Analysis Framework")],
+        }
+
+        assert middleware.after_model(state_with_pending_review, MagicMock()) is None
+        assert middleware.after_model(state_with_confirmed_framework, MagicMock()) is None

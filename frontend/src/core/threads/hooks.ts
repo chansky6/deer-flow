@@ -30,15 +30,18 @@ async function submitThreadTextMessage({
   threadId,
   submitThreadId,
   threadContext,
+  statePatch,
 }: {
   thread: UseStream<AgentThreadState>;
   text: string;
   threadId: string | null | undefined;
   submitThreadId?: string;
   threadContext: Omit<AgentThreadContext, "thread_id">;
+  statePatch?: Omit<Partial<AgentThreadState>, "messages">;
 }) {
   await thread.submit(
     {
+      ...(statePatch ?? {}),
       messages: [
         {
           type: "human",
@@ -415,6 +418,13 @@ export function useConfirmFrameworkReview({
         threadId,
         submitThreadId: isNewThread ? threadId : undefined,
         threadContext,
+        statePatch: {
+          framework_review: null,
+          confirmed_analysis_framework: {
+            tool_call_id: toolCallId,
+            markdown,
+          },
+        },
       }).catch((error) => {
         console.error("Failed to continue automatically after framework confirmation:", error);
         toast.error(autoContinueErrorMessage);

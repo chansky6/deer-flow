@@ -106,7 +106,7 @@ CI runs these regression tests for every pull request via [.github/workflows/bac
 
 **ThreadState** (`src/agents/thread_state.py`):
 - Extends `AgentState` with: `sandbox`, `thread_data`, `title`, `artifacts`, `todos`, `uploaded_files`, `viewed_images`, `framework_review`, `confirmed_analysis_framework`
-- `framework_review` stores a pending structured review request for consulting-analysis framework confirmation after the streamed draft is complete
+- `framework_review` stores a pending structured review request for consulting-analysis framework confirmation after the streamed draft is complete; the middleware now auto-finalizes this state immediately after the framework markdown response instead of waiting for a second review tool step, even if the model also emits follow-up tool calls in that same response
 - `confirmed_analysis_framework` stores the latest user-confirmed framework markdown for transient reinjection on the next model call
 - Uses custom reducers: `merge_artifacts` (deduplicate), `merge_viewed_images` (merge/clear)
 
@@ -211,8 +211,8 @@ Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → 
 3. **Built-in tools**:
    - `present_files` - Make output files visible to user (only `/mnt/user-data/outputs`)
    - `ask_clarification` - Request clarification (intercepted by ClarificationMiddleware → interrupts)
-   - `start_framework_review_draft` - Emit a custom stream event that opens the inline framework-review card before the framework markdown is streamed
-   - `request_framework_review` - Pause after drafting a consulting-analysis framework and hand control to the inline review UI, reusing the assistant markdown as the authoritative draft instead of requiring a duplicate markdown payload
+   - `start_framework_review_draft` - Emit a custom stream event that opens the inline framework-review card before the framework markdown is streamed; the next assistant markdown response is auto-promoted into a pending review checkpoint
+   - `request_framework_review` - Legacy compatibility fallback for older prompts that still explicitly request the inline review checkpoint after drafting the framework
    - `view_image` - Read image as base64 (added only if model supports vision)
 4. **Subagent tool** (if enabled):
    - `task` - Delegate to subagent (description, prompt, subagent_type, max_turns)

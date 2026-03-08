@@ -7,7 +7,7 @@ from typing import Any, NotRequired, override
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
-from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse
+from langchain.agents.middleware.types import ModelCallResult, ModelRequest, ModelResponse, hook_config
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
 from langgraph.prebuilt.tool_node import ToolCallRequest
@@ -98,6 +98,70 @@ class FrameworkReviewMiddleware(AgentMiddleware[FrameworkReviewMiddlewareState])
             name="request_framework_review",
         )
 
+    def _find_latest_ai_message(self, messages: list) -> tuple[int, AIMessage] | None:
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
+            if isinstance(message, AIMessage):
+                return index, message
+        return None
+
+    def _find_tool_call_in_ai_message(self, message: AIMessage, tool_name: str) -> dict[str, Any] | None:
+        for tool_call in message.tool_calls or []:
+            if tool_call.get("name") == tool_name:
+                return tool_call
+        return None
+
+    def _extract_start_review_metadata(self, messages: list, latest_ai_index: int) -> tuple[str, dict[str, Any]] | None:
+        if latest_ai_index <= 0:
+            return None
+
+        previous_message = messages[latest_ai_index - 1]
+        if isinstance(previous_message, ToolMessage) and previous_message.name == "start_framework_review_draft":
+            tool_call_id = str(previous_message.tool_call_id or "").strip()
+            if not tool_call_id:
+                return None
+            requesting_ai_message = self._find_requesting_ai_message(messages[:latest_ai_index], tool_call_id)
+            if requesting_ai_message is None:
+                return None
+            tool_call = self._find_tool_call_in_ai_message(requesting_ai_message, "start_framework_review_draft")
+            if tool_call is None or str(tool_call.get("id") or "") != tool_call_id:
+                return None
+            return tool_call_id, dict(tool_call.get("args") or {})
+
+        if isinstance(previous_message, AIMessage):
+            tool_call = self._find_tool_call_in_ai_message(previous_message, "start_framework_review_draft")
+            if tool_call is None:
+                return None
+            tool_call_id = str(tool_call.get("id") or "").strip()
+            if not tool_call_id:
+                return None
+            return tool_call_id, dict(tool_call.get("args") or {})
+
+        return None
+
+    def _build_auto_framework_review_update(self, messages: list) -> dict[str, Any] | None:
+        latest_ai_message_info = self._find_latest_ai_message(messages)
+        if latest_ai_message_info is None:
+            return None
+
+        latest_ai_index, latest_ai_message = latest_ai_message_info
+        framework_markdown = self._extract_text_content(latest_ai_message.content)
+        if not framework_markdown:
+            return None
+
+        start_review_metadata = self._extract_start_review_metadata(messages, latest_ai_index)
+        if start_review_metadata is None:
+            return None
+
+        tool_call_id, args = start_review_metadata
+        review_state = self._build_review_state(args, tool_call_id, framework_markdown)
+        tool_message = self._build_review_tool_message(tool_call_id)
+        return {
+            "jump_to": "end",
+            "framework_review": review_state,
+            "messages": [tool_message],
+        }
+
     def _build_confirmed_framework_system_message(self, markdown: str) -> SystemMessage:
         return SystemMessage(
             content=(
@@ -156,6 +220,26 @@ class FrameworkReviewMiddleware(AgentMiddleware[FrameworkReviewMiddlewareState])
             return await handler(request)
 
         return self._handle_framework_review(request)
+
+    @hook_config(can_jump_to=["end"])
+    @override
+    def after_model(
+        self,
+        state: FrameworkReviewMiddlewareState,
+        runtime: Any,
+    ) -> dict[str, Any] | None:
+        if state.get("framework_review") or state.get("confirmed_analysis_framework"):
+            return None
+
+        return self._build_auto_framework_review_update(self._get_state_messages(state))
+
+    @override
+    async def aafter_model(
+        self,
+        state: FrameworkReviewMiddlewareState,
+        runtime: Any,
+    ) -> dict[str, Any] | None:
+        return self.after_model(state, runtime)
 
     @override
     def wrap_model_call(

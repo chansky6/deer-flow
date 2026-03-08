@@ -18,9 +18,10 @@ def start_framework_review_draft_tool(
 
     Required workflow:
     - Call this tool first
-    - Then output the COMPLETE framework markdown as a normal assistant response
-    - Then call `request_framework_review` to open the review UI
+    - Then output the COMPLETE framework markdown as the very next assistant response
+    - The backend will automatically convert that streamed markdown into a pending review step
     - Do not add extra narrative before or after the framework markdown
+    - Do not call `request_framework_review` in new workflows
 
     Args:
         review_title: Short title displayed in the framework review UI.
@@ -39,7 +40,7 @@ def start_framework_review_draft_tool(
         }
     )
 
-    return "Framework review draft started. Output the framework markdown next."
+    return "Framework review draft started. Output the framework markdown next so the backend can open review automatically."
 
 
 @tool("request_framework_review", parse_docstring=True, return_direct=True)
@@ -60,14 +61,12 @@ def request_framework_review_tool(
     - You want the frontend to present the framework in a dedicated editable review card
 
     Best practices:
-    - First call `start_framework_review_draft`
-    - Then output the COMPLETE framework markdown as a normal assistant response
-    - Call this tool in the same assistant response that contains that final markdown
+    - Prefer `start_framework_review_draft` followed by the final framework markdown only
+    - Treat this tool as a backward-compatibility fallback for older prompts and skills
     - Prefer omitting `framework_markdown`; the backend will capture the assistant markdown automatically
     - If you provide `framework_markdown` for compatibility, keep it identical to the streamed draft the user just saw
     - Use a concise `review_title` suitable for the review card header
     - Use `instructions` to explain what the user should do next
-    - Call this tool immediately after the streamed framework draft is complete
 
     Args:
         review_title: Short title displayed in the framework review UI.

@@ -294,11 +294,12 @@ After assembling the complete Analysis Framework document in Step 1.6, you **MUS
 #### Required Action
 
 - Call `start_framework_review_draft` immediately before you output the framework markdown
-- Output the complete framework as a normal assistant Markdown response so the draft can stream live in the review card
-- Call `request_framework_review` immediately after the framework is complete
+- Output the complete framework as the very next normal assistant Markdown response so the draft can stream live in the review card
+- The backend will automatically convert that streamed framework into a pending review step
 - Use a short `review_title` suitable for the review card header
 - Use `instructions` to explain what the user should do next
-- Treat the streamed framework content as the authoritative draft; do **not** repeat the full framework in `framework_markdown` unless compatibility requires it
+- Do **NOT** call `request_framework_review` in this workflow
+- Treat the streamed framework content as the authoritative draft; do **not** repeat the full framework in tool arguments
 - Do **NOT** proceed to data collection, chart generation, or report writing until the framework has been reviewed and confirmed
 
 #### Required Tool Pattern
@@ -311,10 +312,7 @@ start_framework_review_draft(
 
 [output the complete Analysis Framework as the next assistant Markdown response]
 
-request_framework_review(
-    review_title="Review Analysis Framework",
-    instructions="Please edit the framework directly and confirm it before I continue to the next step."
-)
+# Stop here. The backend will open the pending review state automatically.
 ```
 
 #### Behavior After Review
@@ -674,7 +672,7 @@ After data collection, user provides: Analysis Framework + Data Summary with bra
 
 ## Output Format
 
-- **Phase 1**: Call `start_framework_review_draft`, generate the complete Analysis Framework in **Markdown** format as a normal assistant response, then trigger `request_framework_review` for user confirmation without repeating the full framework in tool arguments
+- **Phase 1**: Call `start_framework_review_draft`, generate the complete Analysis Framework in **Markdown** format as the next normal assistant response, and let the backend automatically convert that streamed draft into the pending review checkpoint
 - **Phase 2**: Generate the complete Report in **Markdown** format, save it to `/mnt/user-data/outputs/final_report.md` with `write_file`, and then share it with `present_files`; do not deliver Phase 2 as chat-only Markdown
 
 ## Settings

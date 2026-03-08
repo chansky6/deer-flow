@@ -24,7 +24,7 @@ class TestFrameworkReviewTools:
                 "instructions": "Review the streaming draft before continuing.",
             }
         )
-        assert result == "Framework review draft started. Output the framework markdown next."
+        assert result == "Framework review draft started. Output the framework markdown next so the backend can open review automatically."
 
     @patch("src.tools.builtins.framework_review_tool.get_stream_writer")
     def test_start_framework_review_draft_uses_defaults_for_blank_values(self, mock_get_stream_writer):
