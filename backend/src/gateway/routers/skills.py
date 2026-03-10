@@ -7,16 +7,17 @@ import zipfile
 from pathlib import Path
 
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.config.extensions_config import ExtensionsConfig, SkillStateConfig, get_extensions_config, reload_extensions_config
+from src.gateway.auth import require_admin
 from src.gateway.path_utils import resolve_thread_virtual_path
 from src.skills import Skill, load_skills
 from src.skills.loader import get_skills_root_path
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["skills"])
+router = APIRouter(prefix="/api", tags=["skills"], dependencies=[Depends(require_admin)])
 
 
 class SkillResponse(BaseModel):

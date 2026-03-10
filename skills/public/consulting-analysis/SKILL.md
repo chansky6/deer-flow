@@ -1,6 +1,6 @@
 ---
 name: consulting-analysis
-description: Use this skill when the user requests to generate, create, or write professional research reports including but not limited to market analysis, consumer insights, brand analysis, financial analysis, industry research, competitive intelligence, investment due diligence, or any consulting-grade analytical report.
+description: Use this skill when the user requests to generate, create, or write professional non-technical research reports including but not limited to market analysis, consumer insights, brand analysis, financial analysis, industry research, competitive intelligence, investment due diligence, or any consulting-grade non-technical analytical report.
 ---
 
 # Professional Research Report Skill

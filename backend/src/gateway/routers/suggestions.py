@@ -1,9 +1,11 @@
 import json
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from src.gateway.auth import AuthContext
+from src.gateway.ownership import require_thread_owner
 from src.models import create_chat_model
 
 logger = logging.getLogger(__name__)
@@ -79,7 +81,7 @@ def _format_conversation(messages: list[SuggestionMessage]) -> str:
     summary="Generate Follow-up Questions",
     description="Generate short follow-up questions a user might ask next, based on recent conversation context.",
 )
-async def generate_suggestions(thread_id: str, request: SuggestionsRequest) -> SuggestionsResponse:
+async def generate_suggestions(thread_id: str, request: SuggestionsRequest, _auth: AuthContext = Depends(require_thread_owner)) -> SuggestionsResponse:
     if not request.messages:
         return SuggestionsResponse(suggestions=[])
 

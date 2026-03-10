@@ -9,6 +9,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from src.gateway.auth import AuthContext, require_admin, require_auth
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -366,6 +368,18 @@ def agent_client(tmp_path):
 
     with patch("src.config.agents_config.get_paths", return_value=paths_instance), patch("src.gateway.routers.agents.get_paths", return_value=paths_instance):
         app = _make_test_app(tmp_path)
+        app.dependency_overrides[require_admin] = lambda: AuthContext(
+            user_id="admin-1",
+            email="admin@example.com",
+            is_admin=True,
+            session_id="session-admin-1",
+        )
+        app.dependency_overrides[require_auth] = lambda: AuthContext(
+            user_id="user-1",
+            email="user@example.com",
+            is_admin=False,
+            session_id="session-user-1",
+        )
         with TestClient(app) as client:
             client._tmp_path = tmp_path  # type: ignore[attr-defined]
             yield client
@@ -509,7 +523,7 @@ class TestUserProfileAPI:
         assert response.json()["content"] == content
 
         # File should be written to disk
-        user_md = tmp_path / "USER.md"
+        user_md = tmp_path / "users" / "user-1" / "USER.md"
         assert user_md.exists()
         assert user_md.read_text(encoding="utf-8") == content
 

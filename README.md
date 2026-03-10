@@ -117,6 +117,31 @@ DeerFlow has newly integrated the intelligent search and crawling toolset indepe
    export OPENAI_API_KEY=your-openai-api-key
    ```
 
+   For PostgreSQL-backed state persistence in production, set `DEER_FLOW_POSTGRES_URL`
+   (and optionally `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` when using
+   `docker/docker-compose-prod.yaml`).
+
+5. **Optional: enable OAuth login with per-user isolation**
+
+   Configure the frontend auth env vars in `frontend/.env`:
+
+   ```bash
+   AUTH_DATABASE_URL=postgresql://deerflow:change-me@localhost:5432/deerflow
+   BETTER_AUTH_SECRET=replace-me
+   INTERNAL_AUTH_JWT_SECRET=replace-me
+   OIDC_ISSUER=https://issuer.example.com
+   OIDC_CLIENT_ID=your-oidc-client-id
+   OIDC_CLIENT_SECRET=your-oidc-client-secret
+   # Optional GitHub login
+   BETTER_AUTH_GITHUB_CLIENT_ID=your-github-client-id
+   BETTER_AUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
+   ```
+
+   Notes:
+   - The first successful login becomes an admin automatically.
+   - Threads, memory, uploads, artifacts, and `USER.md` are now isolated per authenticated user.
+   - Existing legacy thread data stays untouched and is only visible to admins.
+
 - Option C: Edit `config.yaml` directly (Not recommended for production)
 
    ```yaml

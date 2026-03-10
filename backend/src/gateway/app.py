@@ -10,6 +10,7 @@ from src.gateway.routers import (
     agents,
     artifacts,
     channels,
+    langgraph,
     mcp,
     memory,
     models,
@@ -165,6 +166,9 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
 
     # Skills API is mounted at /api/skills
     app.include_router(skills.router)
+
+    # LangGraph API proxy is mounted at /api/langgraph
+    app.include_router(langgraph.router)
 
     # Artifacts API is mounted at /api/threads/{thread_id}/artifacts
     app.include_router(artifacts.router)

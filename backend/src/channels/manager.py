@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage
+from src.gateway.ownership import record_thread_owner
 from src.channels.store import ChannelStore
 
 logger = logging.getLogger(__name__)
@@ -192,7 +193,7 @@ class ChannelManager:
             self._default_session.get("context"),
             channel_layer.get("context"),
             user_layer.get("context"),
-            {"thread_id": thread_id},
+            {"thread_id": thread_id, "user_id": msg.user_id, "email": None, "is_admin": False},
         )
 
         return assistant_id, run_config, run_context
@@ -289,6 +290,7 @@ class ChannelManager:
             topic_id=msg.topic_id,
             user_id=msg.user_id,
         )
+        record_thread_owner(thread_id, msg.user_id)
         logger.info("[Manager] new thread created on LangGraph Server: thread_id=%s for chat_id=%s topic_id=%s", thread_id, msg.chat_id, msg.topic_id)
         return thread_id
 
@@ -356,17 +358,8 @@ class ChannelManager:
         command = parts[0].lower().lstrip("/")
 
         if command == "new":
-            # Create a new thread on the LangGraph Server
             client = self._get_client()
-            thread = await client.threads.create()
-            new_thread_id = thread["thread_id"]
-            self.store.set_thread_id(
-                msg.channel_name,
-                msg.chat_id,
-                new_thread_id,
-                topic_id=msg.topic_id,
-                user_id=msg.user_id,
-            )
+            await self._create_thread(client, msg)
             reply = "New conversation started."
         elif command == "status":
             thread_id = self.store.get_thread_id(msg.channel_name, msg.chat_id, topic_id=msg.topic_id)
@@ -374,7 +367,7 @@ class ChannelManager:
         elif command == "models":
             reply = await self._fetch_gateway("/api/models", "models")
         elif command == "memory":
-            reply = await self._fetch_gateway("/api/memory", "memory")
+            reply = await self._fetch_gateway("/api/memory", "memory", user_id=msg.user_id)
         elif command == "help":
             reply = "Available commands:\n/new — Start a new conversation\n/status — Show current thread info\n/models — List available models\n/memory — Show memory status\n/help — Show this help"
         else:
@@ -389,15 +382,24 @@ class ChannelManager:
         )
         await self.bus.publish_outbound(outbound)
 
-    async def _fetch_gateway(self, path: str, kind: str) -> str:
+    async def _fetch_gateway(self, path: str, kind: str, user_id: str | None = None) -> str:
         """Fetch data from the Gateway API for command responses."""
-        import httpx
-
         try:
-            async with httpx.AsyncClient() as http:
-                resp = await http.get(f"{self._gateway_url}{path}", timeout=10)
-                resp.raise_for_status()
-                data = resp.json()
+            if kind == "models":
+                from src.config import get_app_config
+
+                data = {"models": [{"name": model.name} for model in get_app_config().models]}
+            elif kind == "memory":
+                from src.agents.memory.updater import get_memory_data
+
+                data = get_memory_data(user_id=user_id)
+            else:
+                import httpx
+
+                async with httpx.AsyncClient() as http:
+                    resp = await http.get(f"{self._gateway_url}{path}", timeout=10)
+                    resp.raise_for_status()
+                    data = resp.json()
         except Exception:
             logger.exception("Failed to fetch %s from gateway", kind)
             return f"Failed to fetch {kind} information."

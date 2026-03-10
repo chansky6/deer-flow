@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from src.config import paths as paths_module
 from src.gateway import markdown_export
+from src.gateway.auth import AuthContext
+from src.gateway.ownership import require_thread_owner
 from src.gateway.routers import artifacts
 
 
@@ -18,6 +20,12 @@ pytest.importorskip("reportlab")
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(paths_module, "_paths", paths_module.Paths(base_dir=tmp_path / ".deer-flow"))
     app = FastAPI()
+    app.dependency_overrides[require_thread_owner] = lambda: AuthContext(
+        user_id="user-1",
+        email="user@example.com",
+        is_admin=False,
+        session_id="session-user-1",
+    )
     app.include_router(artifacts.router)
     yield TestClient(app), tmp_path / ".deer-flow"
     monkeypatch.setattr(paths_module, "_paths", None)

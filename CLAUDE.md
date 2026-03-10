@@ -9,9 +9,10 @@ DeerFlow is a full-stack AI super agent platform built on LangGraph and LangChai
 ## Service Architecture
 
 ```
-Browser → Nginx (2026) ─┬→ Frontend (3000)        # / (non-API)
-                        ├→ Gateway API (8001)      # /api/* (models, mcp, skills, memory, uploads, artifacts)
-                        └→ LangGraph Server (2024) # /api/langgraph/*
+Browser → Nginx (2026) ─┬→ Frontend (3000)        # / and /sign-in
+                        ├→ Frontend BFF (/bff/*)   # session-aware proxy from Next.js
+                        └→ Gateway API (8001)      # /api/* and /api/langgraph/*
+                                             └→ LangGraph Server (2024)
 ```
 
 ## Commands
@@ -68,6 +69,8 @@ Two config files live in the project root:
 
 - `config.yaml` — Models, tools, sandbox, memory, skills, summarization, subagents. Copy from `config.example.yaml`. Values starting with `$` resolve as env vars.
 - `extensions_config.json` — MCP servers and skill enabled states. Copy from `extensions_config.example.json`. Editable at runtime via Gateway API.
+
+For production persistence, `config.yaml` can enable `checkpointer.type: postgres`; `docker/docker-compose-prod.yaml` now provisions a `postgres` service and injects `DEER_FLOW_POSTGRES_URL` by default.
 
 Config lookup order: explicit path → env var (`DEER_FLOW_CONFIG_PATH` / `DEER_FLOW_EXTENSIONS_CONFIG_PATH`) → current dir → parent dir.
 

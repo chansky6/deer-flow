@@ -154,6 +154,7 @@ You are {agent_name}, an open-source super agent.
 
 {soul}
 {memory_context}
+{user_profile_context}
 
 <thinking_style>
 - Think concisely and strategically about the user's request BEFORE taking action
@@ -288,11 +289,12 @@ Recent breakthroughs in language models have also accelerated progress
 """
 
 
-def _get_memory_context(agent_name: str | None = None) -> str:
+def _get_memory_context(agent_name: str | None = None, user_id: str | None = None) -> str:
     """Get memory context for injection into system prompt.
 
     Args:
         agent_name: If provided, loads per-agent memory. If None, loads global memory.
+        user_id: Optional authenticated user identifier for per-user memory isolation.
 
     Returns:
         Formatted memory context string wrapped in XML tags, or empty string if disabled.
@@ -305,7 +307,7 @@ def _get_memory_context(agent_name: str | None = None) -> str:
         if not config.enabled or not config.injection_enabled:
             return ""
 
-        memory_data = get_memory_data(agent_name)
+        memory_data = get_memory_data(agent_name, user_id=user_id)
         memory_content = format_memory_for_injection(memory_data, max_tokens=config.max_injection_tokens)
 
         if not memory_content.strip():
@@ -317,6 +319,31 @@ def _get_memory_context(agent_name: str | None = None) -> str:
 """
     except Exception as e:
         print(f"Failed to load memory context: {e}")
+        return ""
+
+
+def _get_user_profile_context(user_id: str | None = None) -> str:
+    """Get per-user profile context for injection into system prompt."""
+    if not user_id:
+        return ""
+
+    try:
+        from src.config.paths import get_paths
+
+        profile_path = get_paths().user_profile_file(user_id)
+        if not profile_path.exists():
+            return ""
+
+        profile_content = profile_path.read_text(encoding="utf-8").strip()
+        if not profile_content:
+            return ""
+
+        return f"""<user_profile>
+{profile_content}
+</user_profile>
+"""
+    except Exception as e:
+        print(f"Failed to load user profile context: {e}")
         return ""
 
 
@@ -372,15 +399,20 @@ def get_agent_soul(agent_name: str | None) -> str:
     return ""
 
 
-def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagents: int = 3, *, agent_name: str | None = None, available_skills: set[str] | None = None) -> str:
-    # Get memory context
-    memory_context = _get_memory_context(agent_name)
+def apply_prompt_template(
+    subagent_enabled: bool = False,
+    max_concurrent_subagents: int = 3,
+    *,
+    agent_name: str | None = None,
+    available_skills: set[str] | None = None,
+    user_id: str | None = None,
+) -> str:
+    memory_context = _get_memory_context(agent_name, user_id=user_id)
+    user_profile_context = _get_user_profile_context(user_id)
 
-    # Include subagent section only if enabled (from runtime parameter)
     n = max_concurrent_subagents
     subagent_section = _build_subagent_section(n) if subagent_enabled else ""
 
-    # Add subagent reminder to critical_reminders if enabled
     subagent_reminder = (
         "- **Orchestrator Mode**: You are a task orchestrator - decompose complex tasks into parallel sub-tasks. "
         f"**HARD LIMIT: max {n} `task` calls per response.** "
@@ -389,7 +421,6 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         else ""
     )
 
-    # Add subagent thinking guidance if enabled
     subagent_thinking = (
         "- **DECOMPOSITION CHECK: Can this task be broken into 2+ parallel sub-tasks? If YES, COUNT them. "
         f"If count > {n}, you MUST plan batches of ≤{n} and only launch the FIRST batch now. "
@@ -398,15 +429,14 @@ def apply_prompt_template(subagent_enabled: bool = False, max_concurrent_subagen
         else ""
     )
 
-    # Get skills section
     skills_section = get_skills_prompt_section(available_skills)
 
-    # Format the prompt with dynamic skills and memory
     prompt = SYSTEM_PROMPT_TEMPLATE.format(
         agent_name=agent_name or "DeerFlow 2.0",
         soul=get_agent_soul(agent_name),
         skills_section=skills_section,
         memory_context=memory_context,
+        user_profile_context=user_profile_context,
         subagent_section=subagent_section,
         subagent_reminder=subagent_reminder,
         subagent_thinking=subagent_thinking,

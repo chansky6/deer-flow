@@ -81,10 +81,18 @@ The frontend is a stateful chat application. Users create **threads** (conversat
 
 ## Environment
 
-Backend API URLs are optional; an nginx proxy is used by default:
+Backend API URLs are optional; the frontend now prefers its authenticated BFF by default.
+Use these env vars when enabling OAuth login or running inside Docker:
 ```
-NEXT_PUBLIC_BACKEND_BASE_URL=http://localhost:8001
-NEXT_PUBLIC_LANGGRAPH_BASE_URL=http://localhost:2024
+BACKEND_BASE_URL=http://gateway:8001
+AUTH_DATABASE_URL=postgresql://deerflow:change-me@localhost:5432/deerflow
+BETTER_AUTH_SECRET=replace-me
+INTERNAL_AUTH_JWT_SECRET=replace-me
+OIDC_ISSUER=https://issuer.example.com
+OIDC_CLIENT_ID=your-oidc-client-id
+OIDC_CLIENT_SECRET=your-oidc-client-secret
+BETTER_AUTH_GITHUB_CLIENT_ID=your-github-client-id
+BETTER_AUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
 ```
 
 Requires Node.js 22+ and pnpm 10.26.2+.

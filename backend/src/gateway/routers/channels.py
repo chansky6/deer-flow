@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/channels", tags=["channels"])
+from src.gateway.auth import require_admin
+
+router = APIRouter(prefix="/api/channels", tags=["channels"], dependencies=[Depends(require_admin)])
 
 
 class ChannelStatusResponse(BaseModel):

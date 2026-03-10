@@ -67,9 +67,25 @@ pnpm start
 Key environment variables (see `.env.example` for full list):
 
 ```bash
-# Backend API URLs (optional, uses nginx proxy by default)
+# Frontend BFF target for Docker / server-side proxying
+BACKEND_BASE_URL="http://gateway:8001"
+
+# Required for OAuth login
+AUTH_DATABASE_URL="postgresql://deerflow:change-me@localhost:5432/deerflow"
+BETTER_AUTH_SECRET="replace-me"
+INTERNAL_AUTH_JWT_SECRET="replace-me"
+
+# Required for generic OIDC
+OIDC_ISSUER="https://issuer.example.com"
+OIDC_CLIENT_ID="your-oidc-client-id"
+OIDC_CLIENT_SECRET="your-oidc-client-secret"
+
+# Optional GitHub login
+BETTER_AUTH_GITHUB_CLIENT_ID="your-github-client-id"
+BETTER_AUTH_GITHUB_CLIENT_SECRET="your-github-client-secret"
+
+# Optional direct overrides (normally unnecessary; the app defaults to /bff)
 NEXT_PUBLIC_BACKEND_BASE_URL="http://localhost:8001"
-# LangGraph API URLs (optional, uses nginx proxy by default)
 NEXT_PUBLIC_LANGGRAPH_BASE_URL="http://localhost:2024"
 ```
 

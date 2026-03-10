@@ -8,13 +8,14 @@ import logging
 from typing import Any
 
 import yaml
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from src.config.app_config import AppConfig, reload_app_config
+from src.gateway.auth import require_admin
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/config", tags=["config"])
+router = APIRouter(prefix="/api/config", tags=["config"], dependencies=[Depends(require_admin)])
 
 
 def _read_raw_config() -> dict[str, Any]:

@@ -3,13 +3,14 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.config.extensions_config import ExtensionsConfig, get_extensions_config, reload_extensions_config
+from src.gateway.auth import require_admin
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["mcp"])
+router = APIRouter(prefix="/api", tags=["mcp"], dependencies=[Depends(require_admin)])
 
 
 class McpOAuthConfigResponse(BaseModel):

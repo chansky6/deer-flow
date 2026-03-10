@@ -172,7 +172,7 @@ FastAPI application on port 8001 with health check at `GET /health`.
 | **Uploads** (`/api/threads/{id}/uploads`) | `POST /` - upload files (auto-converts PDF/PPT/Excel/Word); `GET /list` - list; `DELETE /{filename}` - delete |
 | **Artifacts** (`/api/threads/{id}/artifacts`) | `GET /{path}` - serve artifacts; `?download=true` for file download; `GET /export/{path}?format=pdf|docx` - export Markdown artifacts as PDF or Word |
 
-Proxied through nginx: `/api/langgraph/*` → LangGraph, all other `/api/*` → Gateway.
+Proxied through nginx: `/api/langgraph/*` → Gateway authenticated proxy → LangGraph, all other `/api/*` → Gateway.
 
 ### Sandbox System (`src/sandbox/`)
 
@@ -390,7 +390,7 @@ make dev
 This starts all services and makes the application available at `http://localhost:2026`.
 
 **Nginx routing**:
-- `/api/langgraph/*` → LangGraph Server (2024)
+- `/api/langgraph/*` → Gateway authenticated proxy → LangGraph Server (2024)
 - `/api/*` (other) → Gateway API (8001)
 - `/` (non-API) → Frontend (3000)
 
@@ -413,7 +413,7 @@ Direct access (without nginx):
 ### Frontend Configuration
 
 The frontend uses environment variables to connect to backend services:
-- `NEXT_PUBLIC_LANGGRAPH_BASE_URL` - Defaults to `/api/langgraph` (through nginx)
+- `NEXT_PUBLIC_LANGGRAPH_BASE_URL` - Mock/demo override only; the app now defaults to `/bff/api/langgraph` through the frontend BFF
 - `NEXT_PUBLIC_BACKEND_BASE_URL` - Defaults to empty string (through nginx)
 
 When using `make dev` from root, the frontend automatically connects through nginx.

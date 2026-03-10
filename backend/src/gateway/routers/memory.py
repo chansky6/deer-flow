@@ -1,10 +1,12 @@
-"""Memory API router for retrieving and managing global memory data."""
+"""Memory API router for retrieving and managing per-user memory data."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from src.agents.memory.updater import get_memory_data, reload_memory_data
 from src.config.memory_config import get_memory_config
+from src.config.paths import get_paths
+from src.gateway.auth import AuthContext, require_auth
 
 router = APIRouter(prefix="/api", tags=["memory"])
 
@@ -72,98 +74,11 @@ class MemoryStatusResponse(BaseModel):
     data: MemoryResponse
 
 
-@router.get(
-    "/memory",
-    response_model=MemoryResponse,
-    summary="Get Memory Data",
-    description="Retrieve the current global memory data including user context, history, and facts.",
-)
-async def get_memory() -> MemoryResponse:
-    """Get the current global memory data.
-
-    Returns:
-        The current memory data with user context, history, and facts.
-
-    Example Response:
-        ```json
-        {
-            "version": "1.0",
-            "lastUpdated": "2024-01-15T10:30:00Z",
-            "user": {
-                "workContext": {"summary": "Working on DeerFlow project", "updatedAt": "..."},
-                "personalContext": {"summary": "Prefers concise responses", "updatedAt": "..."},
-                "topOfMind": {"summary": "Building memory API", "updatedAt": "..."}
-            },
-            "history": {
-                "recentMonths": {"summary": "Recent development activities", "updatedAt": "..."},
-                "earlierContext": {"summary": "", "updatedAt": ""},
-                "longTermBackground": {"summary": "", "updatedAt": ""}
-            },
-            "facts": [
-                {
-                    "id": "fact_abc123",
-                    "content": "User prefers TypeScript over JavaScript",
-                    "category": "preference",
-                    "confidence": 0.9,
-                    "createdAt": "2024-01-15T10:30:00Z",
-                    "source": "thread_xyz"
-                }
-            ]
-        }
-        ```
-    """
-    memory_data = get_memory_data()
-    return MemoryResponse(**memory_data)
-
-
-@router.post(
-    "/memory/reload",
-    response_model=MemoryResponse,
-    summary="Reload Memory Data",
-    description="Reload memory data from the storage file, refreshing the in-memory cache.",
-)
-async def reload_memory() -> MemoryResponse:
-    """Reload memory data from file.
-
-    This forces a reload of the memory data from the storage file,
-    useful when the file has been modified externally.
-
-    Returns:
-        The reloaded memory data.
-    """
-    memory_data = reload_memory_data()
-    return MemoryResponse(**memory_data)
-
-
-@router.get(
-    "/memory/config",
-    response_model=MemoryConfigResponse,
-    summary="Get Memory Configuration",
-    description="Retrieve the current memory system configuration.",
-)
-async def get_memory_config_endpoint() -> MemoryConfigResponse:
-    """Get the memory system configuration.
-
-    Returns:
-        The current memory configuration settings.
-
-    Example Response:
-        ```json
-        {
-            "enabled": true,
-            "storage_path": ".deer-flow/memory.json",
-            "debounce_seconds": 30,
-            "max_facts": 100,
-            "fact_confidence_threshold": 0.7,
-            "injection_enabled": true,
-            "max_injection_tokens": 2000
-        }
-        ```
-    """
+def _build_memory_config_response(user_id: str) -> MemoryConfigResponse:
     config = get_memory_config()
     return MemoryConfigResponse(
         enabled=config.enabled,
-        storage_path=config.storage_path,
+        storage_path=str(get_paths().user_memory_file(user_id)),
         debounce_seconds=config.debounce_seconds,
         max_facts=config.max_facts,
         fact_confidence_threshold=config.fact_confidence_threshold,
@@ -173,29 +88,43 @@ async def get_memory_config_endpoint() -> MemoryConfigResponse:
 
 
 @router.get(
+    "/memory",
+    response_model=MemoryResponse,
+    summary="Get Memory Data",
+    description="Retrieve the authenticated user's memory data including user context, history, and facts.",
+)
+async def get_memory(auth: AuthContext = Depends(require_auth)) -> MemoryResponse:
+    memory_data = get_memory_data(user_id=auth.user_id)
+    return MemoryResponse(**memory_data)
+
+
+@router.post(
+    "/memory/reload",
+    response_model=MemoryResponse,
+    summary="Reload Memory Data",
+    description="Reload the authenticated user's memory data from storage, refreshing the in-memory cache.",
+)
+async def reload_memory(auth: AuthContext = Depends(require_auth)) -> MemoryResponse:
+    memory_data = reload_memory_data(user_id=auth.user_id)
+    return MemoryResponse(**memory_data)
+
+
+@router.get(
+    "/memory/config",
+    response_model=MemoryConfigResponse,
+    summary="Get Memory Configuration",
+    description="Retrieve the current memory system configuration for the authenticated user.",
+)
+async def get_memory_config_endpoint(auth: AuthContext = Depends(require_auth)) -> MemoryConfigResponse:
+    return _build_memory_config_response(auth.user_id)
+
+
+@router.get(
     "/memory/status",
     response_model=MemoryStatusResponse,
     summary="Get Memory Status",
-    description="Retrieve both memory configuration and current data in a single request.",
+    description="Retrieve both memory configuration and current authenticated-user data in a single request.",
 )
-async def get_memory_status() -> MemoryStatusResponse:
-    """Get the memory system status including configuration and data.
-
-    Returns:
-        Combined memory configuration and current data.
-    """
-    config = get_memory_config()
-    memory_data = get_memory_data()
-
-    return MemoryStatusResponse(
-        config=MemoryConfigResponse(
-            enabled=config.enabled,
-            storage_path=config.storage_path,
-            debounce_seconds=config.debounce_seconds,
-            max_facts=config.max_facts,
-            fact_confidence_threshold=config.fact_confidence_threshold,
-            injection_enabled=config.injection_enabled,
-            max_injection_tokens=config.max_injection_tokens,
-        ),
-        data=MemoryResponse(**memory_data),
-    )
+async def get_memory_status(auth: AuthContext = Depends(require_auth)) -> MemoryStatusResponse:
+    memory_data = get_memory_data(user_id=auth.user_id)
+    return MemoryStatusResponse(config=_build_memory_config_response(auth.user_id), data=MemoryResponse(**memory_data))

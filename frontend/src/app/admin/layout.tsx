@@ -1,26 +1,18 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "sonner";
+import { AdminLayoutClient } from "@/components/admin/admin-layout-client";
+import { getAppSession } from "@/server/auth/session";
 
-import { AdminHeader } from "@/components/admin/admin-header";
-import { AdminSidebar } from "@/components/admin/admin-sidebar";
-
-const queryClient = new QueryClient();
-
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="flex h-screen flex-col">
-        <AdminHeader />
-        <div className="flex flex-1 overflow-hidden">
-          <AdminSidebar />
-          <main className="flex-1 overflow-y-auto p-6">{children}</main>
-        </div>
-      </div>
-      <Toaster position="top-center" />
-    </QueryClientProvider>
-  );
+  const session = await getAppSession();
+  if (!session) {
+    redirect("/sign-in?next=/admin");
+  }
+  if (!session.isAdmin) {
+    redirect("/workspace");
+  }
+
+  return <AdminLayoutClient>{children}</AdminLayoutClient>;
 }

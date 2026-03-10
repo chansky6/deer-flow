@@ -3,15 +3,16 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.config.paths import VIRTUAL_PATH_PREFIX, get_paths
+from src.gateway.ownership import require_thread_owner
 from src.sandbox.sandbox_provider import get_sandbox_provider
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/threads/{thread_id}/uploads", tags=["uploads"])
+router = APIRouter(prefix="/api/threads/{thread_id}/uploads", tags=["uploads"], dependencies=[Depends(require_thread_owner)])
 
 # File extensions that should be converted to markdown
 CONVERTIBLE_EXTENSIONS = {

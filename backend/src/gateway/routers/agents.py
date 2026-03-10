@@ -5,11 +5,12 @@ import re
 import shutil
 
 import yaml
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.config.agents_config import AgentConfig, list_custom_agents, load_agent_config, load_agent_soul
 from src.config.paths import get_paths
+from src.gateway.auth import AuthContext, require_admin, require_auth
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["agents"])
@@ -94,7 +95,7 @@ def _agent_config_to_response(agent_cfg: AgentConfig, include_soul: bool = False
     summary="List Custom Agents",
     description="List all custom agents available in the agents directory.",
 )
-async def list_agents() -> AgentsListResponse:
+async def list_agents(_auth: AuthContext = Depends(require_admin)) -> AgentsListResponse:
     """List all custom agents.
 
     Returns:
@@ -113,7 +114,7 @@ async def list_agents() -> AgentsListResponse:
     summary="Check Agent Name",
     description="Validate an agent name and check if it is available (case-insensitive).",
 )
-async def check_agent_name(name: str) -> dict:
+async def check_agent_name(name: str, _auth: AuthContext = Depends(require_admin)) -> dict:
     """Check whether an agent name is valid and not yet taken.
 
     Args:
@@ -137,7 +138,7 @@ async def check_agent_name(name: str) -> dict:
     summary="Get Custom Agent",
     description="Retrieve details and SOUL.md content for a specific custom agent.",
 )
-async def get_agent(name: str) -> AgentResponse:
+async def get_agent(name: str, _auth: AuthContext = Depends(require_admin)) -> AgentResponse:
     """Get a specific custom agent by name.
 
     Args:
@@ -169,7 +170,7 @@ async def get_agent(name: str) -> AgentResponse:
     summary="Create Custom Agent",
     description="Create a new custom agent with its config and SOUL.md.",
 )
-async def create_agent_endpoint(request: AgentCreateRequest) -> AgentResponse:
+async def create_agent_endpoint(request: AgentCreateRequest, _auth: AuthContext = Depends(require_admin)) -> AgentResponse:
     """Create a new custom agent.
 
     Args:
@@ -230,7 +231,7 @@ async def create_agent_endpoint(request: AgentCreateRequest) -> AgentResponse:
     summary="Update Custom Agent",
     description="Update an existing custom agent's config and/or SOUL.md.",
 )
-async def update_agent(name: str, request: AgentUpdateRequest) -> AgentResponse:
+async def update_agent(name: str, request: AgentUpdateRequest, _auth: AuthContext = Depends(require_admin)) -> AgentResponse:
     """Update an existing custom agent.
 
     Args:
@@ -309,14 +310,14 @@ class UserProfileUpdateRequest(BaseModel):
     summary="Get User Profile",
     description="Read the global USER.md file that is injected into all custom agents.",
 )
-async def get_user_profile() -> UserProfileResponse:
+async def get_user_profile(auth: AuthContext = Depends(require_auth)) -> UserProfileResponse:
     """Return the current USER.md content.
 
     Returns:
         UserProfileResponse with content=None if USER.md does not exist yet.
     """
     try:
-        user_md_path = get_paths().user_md_file
+        user_md_path = get_paths().user_profile_file(auth.user_id)
         if not user_md_path.exists():
             return UserProfileResponse(content=None)
         raw = user_md_path.read_text(encoding="utf-8").strip()
@@ -332,7 +333,7 @@ async def get_user_profile() -> UserProfileResponse:
     summary="Update User Profile",
     description="Write the global USER.md file that is injected into all custom agents.",
 )
-async def update_user_profile(request: UserProfileUpdateRequest) -> UserProfileResponse:
+async def update_user_profile(request: UserProfileUpdateRequest, auth: AuthContext = Depends(require_auth)) -> UserProfileResponse:
     """Create or overwrite the global USER.md.
 
     Args:
@@ -343,9 +344,10 @@ async def update_user_profile(request: UserProfileUpdateRequest) -> UserProfileR
     """
     try:
         paths = get_paths()
-        paths.base_dir.mkdir(parents=True, exist_ok=True)
-        paths.user_md_file.write_text(request.content, encoding="utf-8")
-        logger.info(f"Updated USER.md at {paths.user_md_file}")
+        profile_path = paths.user_profile_file(auth.user_id)
+        profile_path.parent.mkdir(parents=True, exist_ok=True)
+        profile_path.write_text(request.content, encoding="utf-8")
+        logger.info(f"Updated USER.md at {profile_path}")
         return UserProfileResponse(content=request.content or None)
     except Exception as e:
         logger.error(f"Failed to update user profile: {e}", exc_info=True)
@@ -358,7 +360,7 @@ async def update_user_profile(request: UserProfileUpdateRequest) -> UserProfileR
     summary="Delete Custom Agent",
     description="Delete a custom agent and all its files (config, SOUL.md, memory).",
 )
-async def delete_agent(name: str) -> None:
+async def delete_agent(name: str, _auth: AuthContext = Depends(require_admin)) -> None:
     """Delete a custom agent.
 
     Args:

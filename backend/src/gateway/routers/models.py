@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.config import get_app_config
+from src.gateway.auth import require_auth
 
-router = APIRouter(prefix="/api", tags=["models"])
+router = APIRouter(prefix="/api", tags=["models"], dependencies=[Depends(require_auth)])
 
 
 class ModelResponse(BaseModel):

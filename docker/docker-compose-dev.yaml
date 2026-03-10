@@ -96,6 +96,9 @@ services:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - CI=true
+      - BACKEND_BASE_URL=http://gateway:8001
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-dev-local-auth-secret}
+      - INTERNAL_AUTH_JWT_SECRET=${INTERNAL_AUTH_JWT_SECRET:-dev-local-auth-secret}
     env_file:
       - ../frontend/.env
     networks:
@@ -122,6 +125,8 @@ services:
     working_dir: /app
     environment:
       - CI=true
+      - INTERNAL_AUTH_JWT_SECRET=${INTERNAL_AUTH_JWT_SECRET:-dev-local-auth-secret}
+      - LANGGRAPH_UPSTREAM_URL=http://langgraph:2024
     env_file:
       - ../.env
     extra_hosts:

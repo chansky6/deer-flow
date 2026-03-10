@@ -23,6 +23,7 @@ import { MemorySettingsPage } from "@/components/workspace/settings/memory-setti
 import { NotificationSettingsPage } from "@/components/workspace/settings/notification-settings-page";
 import { SkillSettingsPage } from "@/components/workspace/settings/skill-settings-page";
 import { ToolSettingsPage } from "@/components/workspace/settings/tool-settings-page";
+import { useAuthSession } from "@/core/auth";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,7 @@ type SettingsDialogProps = React.ComponentProps<typeof Dialog> & {
 export function SettingsDialog(props: SettingsDialogProps) {
   const { defaultSection = "appearance", ...dialogProps } = props;
   const { t } = useI18n();
+  const { isAdmin } = useAuthSession();
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(defaultSection);
 
@@ -52,8 +54,12 @@ export function SettingsDialog(props: SettingsDialogProps) {
     }
   }, [defaultSection, dialogProps.open]);
 
-  const sections = useMemo(
-    () => [
+  const sections = useMemo(() => {
+    const baseSections: Array<{
+      id: SettingsSection;
+      label: string;
+      icon: typeof PaletteIcon;
+    }> = [
       {
         id: "appearance",
         label: t.settings.sections.appearance,
@@ -69,19 +75,36 @@ export function SettingsDialog(props: SettingsDialogProps) {
         label: t.settings.sections.memory,
         icon: BrainIcon,
       },
-      { id: "tools", label: t.settings.sections.tools, icon: WrenchIcon },
-      { id: "skills", label: t.settings.sections.skills, icon: SparklesIcon },
-      { id: "about", label: t.settings.sections.about, icon: InfoIcon },
-    ],
-    [
-      t.settings.sections.appearance,
-      t.settings.sections.memory,
-      t.settings.sections.tools,
-      t.settings.sections.skills,
-      t.settings.sections.notification,
-      t.settings.sections.about,
-    ],
-  );
+    ];
+
+    if (isAdmin) {
+      baseSections.push(
+        { id: "tools", label: t.settings.sections.tools, icon: WrenchIcon },
+        {
+          id: "skills",
+          label: t.settings.sections.skills,
+          icon: SparklesIcon,
+        },
+      );
+    }
+
+    baseSections.push({ id: "about", label: t.settings.sections.about, icon: InfoIcon });
+    return baseSections;
+  }, [
+    isAdmin,
+    t.settings.sections.appearance,
+    t.settings.sections.memory,
+    t.settings.sections.tools,
+    t.settings.sections.skills,
+    t.settings.sections.notification,
+    t.settings.sections.about,
+  ]);
+
+  useEffect(() => {
+    if (!isAdmin && (activeSection === "tools" || activeSection === "skills")) {
+      setActiveSection("appearance");
+    }
+  }, [activeSection, isAdmin]);
   return (
     <Dialog
       {...dialogProps}
@@ -126,8 +149,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
             <div className="space-y-8 p-6">
               {activeSection === "appearance" && <AppearanceSettingsPage />}
               {activeSection === "memory" && <MemorySettingsPage />}
-              {activeSection === "tools" && <ToolSettingsPage />}
-              {activeSection === "skills" && (
+              {isAdmin && activeSection === "tools" && <ToolSettingsPage />}
+              {isAdmin && activeSection === "skills" && (
                 <SkillSettingsPage
                   onClose={() => props.onOpenChange?.(false)}
                 />

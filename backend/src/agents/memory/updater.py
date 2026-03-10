@@ -16,7 +16,7 @@ from src.config.paths import get_paths
 from src.models import create_chat_model
 
 
-def _get_memory_file_path(agent_name: str | None = None) -> Path:
+def _get_memory_file_path(agent_name: str | None = None, user_id: str | None = None) -> Path:
     """Get the path to the memory file.
 
     Args:
@@ -26,6 +26,12 @@ def _get_memory_file_path(agent_name: str | None = None) -> Path:
     Returns:
         Path to the memory file.
     """
+    if user_id is not None and agent_name is not None:
+        return get_paths().user_agent_memory_file(user_id, agent_name)
+
+    if user_id is not None:
+        return get_paths().user_memory_file(user_id)
+
     if agent_name is not None:
         return get_paths().agent_memory_file(agent_name)
 
@@ -58,10 +64,10 @@ def _create_empty_memory() -> dict[str, Any]:
 
 # Per-agent memory cache: keyed by agent_name (None = global)
 # Value: (memory_data, file_mtime)
-_memory_cache: dict[str | None, tuple[dict[str, Any], float | None]] = {}
+_memory_cache: dict[tuple[str | None, str | None], tuple[dict[str, Any], float | None]] = {}
 
 
-def get_memory_data(agent_name: str | None = None) -> dict[str, Any]:
+def get_memory_data(agent_name: str | None = None, user_id: str | None = None) -> dict[str, Any]:
     """Get the current memory data (cached with file modification time check).
 
     The cache is automatically invalidated if the memory file has been modified
@@ -73,7 +79,8 @@ def get_memory_data(agent_name: str | None = None) -> dict[str, Any]:
     Returns:
         The memory data dictionary.
     """
-    file_path = _get_memory_file_path(agent_name)
+    file_path = _get_memory_file_path(agent_name, user_id)
+    cache_key = (user_id, agent_name)
 
     # Get current file modification time
     try:
@@ -81,18 +88,18 @@ def get_memory_data(agent_name: str | None = None) -> dict[str, Any]:
     except OSError:
         current_mtime = None
 
-    cached = _memory_cache.get(agent_name)
+    cached = _memory_cache.get(cache_key)
 
     # Invalidate cache if file has been modified or doesn't exist
     if cached is None or cached[1] != current_mtime:
-        memory_data = _load_memory_from_file(agent_name)
-        _memory_cache[agent_name] = (memory_data, current_mtime)
+        memory_data = _load_memory_from_file(agent_name, user_id)
+        _memory_cache[cache_key] = (memory_data, current_mtime)
         return memory_data
 
     return cached[0]
 
 
-def reload_memory_data(agent_name: str | None = None) -> dict[str, Any]:
+def reload_memory_data(agent_name: str | None = None, user_id: str | None = None) -> dict[str, Any]:
     """Reload memory data from file, forcing cache invalidation.
 
     Args:
@@ -101,19 +108,19 @@ def reload_memory_data(agent_name: str | None = None) -> dict[str, Any]:
     Returns:
         The reloaded memory data dictionary.
     """
-    file_path = _get_memory_file_path(agent_name)
-    memory_data = _load_memory_from_file(agent_name)
+    file_path = _get_memory_file_path(agent_name, user_id)
+    memory_data = _load_memory_from_file(agent_name, user_id)
 
     try:
         mtime = file_path.stat().st_mtime if file_path.exists() else None
     except OSError:
         mtime = None
 
-    _memory_cache[agent_name] = (memory_data, mtime)
+    _memory_cache[(user_id, agent_name)] = (memory_data, mtime)
     return memory_data
 
 
-def _load_memory_from_file(agent_name: str | None = None) -> dict[str, Any]:
+def _load_memory_from_file(agent_name: str | None = None, user_id: str | None = None) -> dict[str, Any]:
     """Load memory data from file.
 
     Args:
@@ -122,7 +129,7 @@ def _load_memory_from_file(agent_name: str | None = None) -> dict[str, Any]:
     Returns:
         The memory data dictionary.
     """
-    file_path = _get_memory_file_path(agent_name)
+    file_path = _get_memory_file_path(agent_name, user_id)
 
     if not file_path.exists():
         return _create_empty_memory()
@@ -173,7 +180,7 @@ def _strip_upload_mentions_from_memory(memory_data: dict[str, Any]) -> dict[str,
     return memory_data
 
 
-def _save_memory_to_file(memory_data: dict[str, Any], agent_name: str | None = None) -> bool:
+def _save_memory_to_file(memory_data: dict[str, Any], agent_name: str | None = None, user_id: str | None = None) -> bool:
     """Save memory data to file and update cache.
 
     Args:
@@ -183,7 +190,7 @@ def _save_memory_to_file(memory_data: dict[str, Any], agent_name: str | None = N
     Returns:
         True if successful, False otherwise.
     """
-    file_path = _get_memory_file_path(agent_name)
+    file_path = _get_memory_file_path(agent_name, user_id)
 
     try:
         # Ensure directory exists
@@ -206,7 +213,7 @@ def _save_memory_to_file(memory_data: dict[str, Any], agent_name: str | None = N
         except OSError:
             mtime = None
 
-        _memory_cache[agent_name] = (memory_data, mtime)
+        _memory_cache[(user_id, agent_name)] = (memory_data, mtime)
 
         print(f"Memory saved to {file_path}")
         return True
@@ -232,7 +239,7 @@ class MemoryUpdater:
         model_name = self._model_name or config.model_name
         return create_chat_model(name=model_name, thinking_enabled=False)
 
-    def update_memory(self, messages: list[Any], thread_id: str | None = None, agent_name: str | None = None) -> bool:
+    def update_memory(self, messages: list[Any], thread_id: str | None = None, agent_name: str | None = None, user_id: str | None = None) -> bool:
         """Update memory based on conversation messages.
 
         Args:
@@ -252,7 +259,7 @@ class MemoryUpdater:
 
         try:
             # Get current memory
-            current_memory = get_memory_data(agent_name)
+            current_memory = get_memory_data(agent_name, user_id)
 
             # Format conversation for prompt
             conversation_text = format_conversation_for_update(messages)
@@ -289,7 +296,7 @@ class MemoryUpdater:
             updated_memory = _strip_upload_mentions_from_memory(updated_memory)
 
             # Save
-            return _save_memory_to_file(updated_memory, agent_name)
+            return _save_memory_to_file(updated_memory, agent_name, user_id)
 
         except json.JSONDecodeError as e:
             print(f"Failed to parse LLM response for memory update: {e}")
@@ -369,7 +376,7 @@ class MemoryUpdater:
         return current_memory
 
 
-def update_memory_from_conversation(messages: list[Any], thread_id: str | None = None, agent_name: str | None = None) -> bool:
+def update_memory_from_conversation(messages: list[Any], thread_id: str | None = None, agent_name: str | None = None, user_id: str | None = None) -> bool:
     """Convenience function to update memory from a conversation.
 
     Args:
@@ -381,4 +388,4 @@ def update_memory_from_conversation(messages: list[Any], thread_id: str | None =
         True if successful, False otherwise.
     """
     updater = MemoryUpdater()
-    return updater.update_memory(messages, thread_id, agent_name)
+    return updater.update_memory(messages, thread_id, agent_name, user_id)

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from src.config.app_config import reset_app_config
 from src.gateway.app import create_app
+from src.gateway.auth import AuthContext, require_admin
 
 SAMPLE_CONFIG = {
     "models": [
@@ -41,6 +42,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DEER_FLOW_CONFIG_PATH", str(config_file))
     reset_app_config()
     app = create_app()
+    app.dependency_overrides[require_admin] = lambda: AuthContext(
+        user_id="admin-1",
+        email="admin@example.com",
+        is_admin=True,
+        session_id="session-admin-1",
+    )
     yield TestClient(app)
     reset_app_config()
 

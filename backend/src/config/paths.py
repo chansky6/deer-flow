@@ -1,3 +1,4 @@
+from hashlib import sha256
 import os
 import re
 from pathlib import Path
@@ -62,6 +63,30 @@ class Paths:
     def user_md_file(self) -> Path:
         """Path to the global user profile file: `{base_dir}/USER.md`."""
         return self.base_dir / "USER.md"
+
+    @property
+    def users_dir(self) -> Path:
+        """Root directory for per-user data: `{base_dir}/users/`."""
+        return self.base_dir / "users"
+
+    def user_dir(self, user_id: str) -> Path:
+        """Directory for a specific user's persisted data."""
+        safe_user_id = user_id
+        if not _SAFE_THREAD_ID_RE.match(user_id):
+            safe_user_id = f'user-{sha256(user_id.encode("utf-8")).hexdigest()}'
+        return self.users_dir / safe_user_id
+
+    def user_memory_file(self, user_id: str) -> Path:
+        """Per-user memory file path."""
+        return self.user_dir(user_id) / "memory.json"
+
+    def user_profile_file(self, user_id: str) -> Path:
+        """Per-user profile file path."""
+        return self.user_dir(user_id) / "USER.md"
+
+    def user_agent_memory_file(self, user_id: str, name: str) -> Path:
+        """Per-user, per-agent memory file path."""
+        return self.user_dir(user_id) / "agents" / name.lower() / "memory.json"
 
     @property
     def agents_dir(self) -> Path:

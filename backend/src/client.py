@@ -174,6 +174,7 @@ class DeerFlowClient:
             "thinking_enabled": overrides.get("thinking_enabled", self._thinking_enabled),
             "is_plan_mode": overrides.get("plan_mode", self._plan_mode),
             "subagent_enabled": overrides.get("subagent_enabled", self._subagent_enabled),
+            "user_id": overrides.get("user_id"),
         }
         return RunnableConfig(
             configurable=configurable,
@@ -188,6 +189,7 @@ class DeerFlowClient:
             cfg.get("thinking_enabled"),
             cfg.get("is_plan_mode"),
             cfg.get("subagent_enabled"),
+            cfg.get("user_id"),
         )
 
         if self._agent is not None and self._agent_config_key == key:
@@ -205,6 +207,7 @@ class DeerFlowClient:
             "system_prompt": apply_prompt_template(
                 subagent_enabled=subagent_enabled,
                 max_concurrent_subagents=max_concurrent_subagents,
+                user_id=cfg.get("user_id"),
             ),
             "state_schema": ThreadState,
         }
