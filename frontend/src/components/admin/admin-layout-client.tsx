@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 
 import { AdminHeader } from "@/components/admin/admin-header";
 import { AdminSidebar } from "@/components/admin/admin-sidebar";
+import { PostLoginToast } from "@/components/auth/post-login-toast";
 
 const queryClient = new QueryClient();
 
@@ -14,6 +15,7 @@ export function AdminLayoutClient({
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen flex-col">
+        <PostLoginToast />
         <AdminHeader />
         <div className="flex flex-1 overflow-hidden">
           <AdminSidebar />

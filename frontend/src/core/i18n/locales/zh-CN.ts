@@ -301,6 +301,11 @@ export const zhCN: Translations = {
       notification: "通知",
       about: "关于",
     },
+    actions: {
+      signOut: "退出登录",
+      signingOut: "正在退出...",
+      signOutFailed: "退出登录失败",
+    },
     memory: {
       title: "记忆",
       description:

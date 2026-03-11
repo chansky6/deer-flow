@@ -251,6 +251,11 @@ export interface Translations {
       notification: string;
       about: string;
     };
+    actions: {
+      signOut: string;
+      signingOut: string;
+      signOutFailed: string;
+    };
     memory: {
       title: string;
       description: string;

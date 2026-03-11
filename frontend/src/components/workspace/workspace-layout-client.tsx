@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { Toaster } from "sonner";
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { PostLoginToast } from "@/components/auth/post-login-toast";
 import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
 import { getLocalSettings, useLocalSettings } from "@/core/settings";
 
@@ -39,6 +40,7 @@ export function WorkspaceLayoutClient({
         open={open}
         onOpenChange={handleOpenChange}
       >
+        <PostLoginToast />
         <WorkspaceSidebar />
         <SidebarInset className="min-w-0">{children}</SidebarInset>
       </SidebarProvider>

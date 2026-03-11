@@ -4,12 +4,16 @@ import {
   BellIcon,
   InfoIcon,
   BrainIcon,
+  LogOutIcon,
   PaletteIcon,
   SparklesIcon,
   WrenchIcon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +30,7 @@ import { ToolSettingsPage } from "@/components/workspace/settings/tool-settings-
 import { useAuthSession } from "@/core/auth";
 import { useI18n } from "@/core/i18n/hooks";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/server/better-auth/client";
 
 type SettingsSection =
   | "appearance"
@@ -41,8 +46,10 @@ type SettingsDialogProps = React.ComponentProps<typeof Dialog> & {
 
 export function SettingsDialog(props: SettingsDialogProps) {
   const { defaultSection = "appearance", ...dialogProps } = props;
+  const router = useRouter();
   const { t } = useI18n();
   const { isAdmin } = useAuthSession();
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(defaultSection);
 
@@ -105,6 +112,23 @@ export function SettingsDialog(props: SettingsDialogProps) {
       setActiveSection("appearance");
     }
   }, [activeSection, isAdmin]);
+
+  const handleSignOut = async () => {
+    try {
+      setIsSigningOut(true);
+      await authClient.signOut();
+      props.onOpenChange?.(false);
+      router.replace("/sign-in");
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t.settings.actions.signOutFailed,
+      );
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   return (
     <Dialog
       {...dialogProps}
@@ -121,8 +145,8 @@ export function SettingsDialog(props: SettingsDialogProps) {
           </p>
         </DialogHeader>
         <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[220px_1fr]">
-          <nav className="bg-sidebar min-h-0 overflow-y-auto rounded-lg border p-2">
-            <ul className="space-y-1 pr-1">
+          <nav className="bg-sidebar flex min-h-0 flex-col rounded-lg border p-2">
+            <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {sections.map(({ id, label, icon: Icon }) => {
                 const active = activeSection === id;
                 return (
@@ -144,6 +168,20 @@ export function SettingsDialog(props: SettingsDialogProps) {
                 );
               })}
             </ul>
+            <div className="mt-2 border-t pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-start text-destructive hover:text-destructive"
+                disabled={isSigningOut}
+                onClick={() => void handleSignOut()}
+              >
+                <LogOutIcon className="size-4" />
+                {isSigningOut
+                  ? t.settings.actions.signingOut
+                  : t.settings.actions.signOut}
+              </Button>
+            </div>
           </nav>
           <ScrollArea className="h-full min-h-0 rounded-lg border">
             <div className="space-y-8 p-6">

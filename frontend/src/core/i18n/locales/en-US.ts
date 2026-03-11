@@ -319,6 +319,11 @@ export const enUS: Translations = {
       notification: "Notification",
       about: "About",
     },
+    actions: {
+      signOut: "Sign out",
+      signingOut: "Signing out...",
+      signOutFailed: "Failed to sign out",
+    },
     memory: {
       title: "Memory",
       description:
