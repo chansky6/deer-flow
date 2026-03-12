@@ -84,10 +84,31 @@ OIDC_CLIENT_SECRET="your-oidc-client-secret"
 BETTER_AUTH_GITHUB_CLIENT_ID="your-github-client-id"
 BETTER_AUTH_GITHUB_CLIENT_SECRET="your-github-client-secret"
 
+# Optional Huawei W3 OAuth2 login (authorization_code only)
+W3_OAUTH_CLIENT_ID="your-w3-client-id"
+W3_OAUTH_CLIENT_SECRET="your-w3-client-secret"
+W3_OAUTH_AUTHORIZATION_URL="https://w3.example.com/oauth2/authorize"
+W3_OAUTH_TOKEN_URL="https://w3.example.com/oauth2/token"
+W3_OAUTH_USERINFO_URL="https://w3.example.com/oauth2/userinfo"
+# Optional
+W3_OAUTH_SCOPES="profile,email"
+W3_OAUTH_PKCE="true"
+W3_OAUTH_USER_ID_FIELD="employee_id"
+W3_OAUTH_USER_EMAIL_FIELD="mail"
+W3_OAUTH_USER_NAME_FIELD="displayName"
+W3_OAUTH_USER_IMAGE_FIELD="avatarUrl"
+W3_OAUTH_USER_EMAIL_VERIFIED_FIELD="mailVerified"
+
 # Optional direct overrides (normally unnecessary; the app defaults to /bff)
 NEXT_PUBLIC_BACKEND_BASE_URL="http://localhost:8001"
 NEXT_PUBLIC_LANGGRAPH_BASE_URL="http://localhost:2024"
 ```
+
+W3 notes:
+- The sign-in page always shows a Huawei W3 button.
+- The button only starts OAuth when the five required W3 variables are all set.
+- Profile mapping defaults to `id/sub`, `email`, `name/display_name`, `picture/avatar/avatar_url`, and `email_verified`.
+- Use the `W3_OAUTH_USER_*_FIELD` overrides when W3 returns different field names.
 
 ## Project Structure
 

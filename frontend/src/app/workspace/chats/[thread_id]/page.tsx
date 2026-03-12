@@ -13,6 +13,7 @@ import {
 import { InputBox } from "@/components/workspace/input-box";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
+import { SignOutButton } from "@/components/workspace/sign-out-button";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { Welcome } from "@/components/workspace/welcome";
@@ -213,7 +214,7 @@ export default function ChatPage() {
     thread.values.confirmed_analysis_framework?.tool_call_id ??
     dismissedFrameworkReviewId;
   const sourceMessages = useMemo(
-    () => ((finalState?.messages as Message[] | undefined) ?? thread.messages),
+    () => finalState?.messages ?? thread.messages,
     [finalState?.messages, thread.messages],
   );
   const frameworkReviewDraftMessageId = useMemo(
@@ -370,7 +371,8 @@ export default function ChatPage() {
             <div className="flex w-full items-center text-sm font-medium">
               <ThreadTitle threadId={threadId} thread={thread} />
             </div>
-            <div>
+            <div className="flex items-center gap-2">
+              {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" && <SignOutButton />}
               <ArtifactTrigger />
             </div>
           </header>

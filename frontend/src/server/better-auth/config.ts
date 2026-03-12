@@ -5,6 +5,7 @@ import { getMigrations } from "better-auth/db";
 import { genericOAuth } from "better-auth/plugins";
 
 import { env } from "@/env";
+import { createW3OAuthConfig, isW3OAuthConfigured } from "@/server/better-auth/w3";
 import { getDatabasePool } from "@/server/db";
 
 const pool = getDatabasePool();
@@ -22,6 +23,27 @@ const hasGithubProvider = Boolean(
 const hasOidcProvider = Boolean(
   env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_CLIENT_SECRET,
 );
+const hasW3Provider = isW3OAuthConfigured();
+const trustedProviders = [
+  ...(hasGithubProvider ? ["github"] : []),
+  ...(hasOidcProvider ? ["oidc"] : []),
+  ...(hasW3Provider ? ["w3"] : []),
+];
+const genericOAuthProviders = [
+  ...(hasOidcProvider
+    ? [
+        {
+          providerId: "oidc",
+          clientId: env.OIDC_CLIENT_ID!,
+          clientSecret: env.OIDC_CLIENT_SECRET!,
+          discoveryUrl: env.OIDC_ISSUER!,
+          scopes: ["openid", "profile", "email"],
+          pkce: true,
+        },
+      ]
+    : []),
+  ...(hasW3Provider ? [createW3OAuthConfig()!] : []),
+];
 
 export const auth = betterAuth({
   baseURL,
@@ -31,7 +53,7 @@ export const auth = betterAuth({
   account: {
     accountLinking: {
       enabled: true,
-      trustedProviders: ["github", "oidc"],
+      trustedProviders,
     },
   },
   user: {
@@ -68,19 +90,10 @@ export const auth = betterAuth({
         },
       }
     : undefined,
-  plugins: hasOidcProvider
+  plugins: genericOAuthProviders.length > 0
     ? [
         genericOAuth({
-          config: [
-            {
-              providerId: "oidc",
-              clientId: env.OIDC_CLIENT_ID!,
-              clientSecret: env.OIDC_CLIENT_SECRET!,
-              discoveryUrl: env.OIDC_ISSUER!,
-              scopes: ["openid", "profile", "email"],
-              pkce: true,
-            },
-          ],
+          config: genericOAuthProviders,
         }),
       ]
     : [],

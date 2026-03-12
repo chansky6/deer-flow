@@ -12,6 +12,7 @@ import { ChatBox, useThreadChat } from "@/components/workspace/chats";
 import { InputBox } from "@/components/workspace/input-box";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
+import { SignOutButton } from "@/components/workspace/sign-out-button";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { Tooltip } from "@/components/workspace/tooltip";
@@ -101,7 +102,7 @@ export default function AgentChatPage() {
             <div className="flex w-full items-center text-sm font-medium">
               <ThreadTitle threadId={threadId} thread={thread} />
             </div>
-            <div className="mr-4 flex items-center">
+            <div className="mr-4 flex items-center gap-2">
               <Tooltip content={t.agents.newChat}>
                 <Button
                   size="sm"
@@ -113,6 +114,7 @@ export default function AgentChatPage() {
                   <PlusSquare /> {t.agents.newChat}
                 </Button>
               </Tooltip>
+              {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" && <SignOutButton />}
               <ArtifactTrigger />
             </div>
           </header>

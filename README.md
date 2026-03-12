@@ -135,12 +135,27 @@ DeerFlow has newly integrated the intelligent search and crawling toolset indepe
    # Optional GitHub login
    BETTER_AUTH_GITHUB_CLIENT_ID=your-github-client-id
    BETTER_AUTH_GITHUB_CLIENT_SECRET=your-github-client-secret
+   # Optional Huawei W3 OAuth2 login (authorization_code only)
+   W3_OAUTH_CLIENT_ID=your-w3-client-id
+   W3_OAUTH_CLIENT_SECRET=your-w3-client-secret
+   W3_OAUTH_AUTHORIZATION_URL=https://w3.example.com/oauth2/authorize
+   W3_OAUTH_TOKEN_URL=https://w3.example.com/oauth2/token
+   W3_OAUTH_USERINFO_URL=https://w3.example.com/oauth2/userinfo
+   # Optional
+   W3_OAUTH_SCOPES=profile,email
+   W3_OAUTH_PKCE=true
+   W3_OAUTH_USER_ID_FIELD=employee_id
+   W3_OAUTH_USER_EMAIL_FIELD=mail
+   W3_OAUTH_USER_NAME_FIELD=displayName
+   W3_OAUTH_USER_IMAGE_FIELD=avatarUrl
+   W3_OAUTH_USER_EMAIL_VERIFIED_FIELD=mailVerified
    ```
 
    Notes:
    - The first successful login becomes an admin automatically.
    - Threads, memory, uploads, artifacts, and `USER.md` are now isolated per authenticated user.
    - Existing legacy thread data stays untouched and is only visible to admins.
+   - The Huawei W3 button is always visible on the sign-in page; it only starts OAuth when all required W3 settings are configured.
 
 - Option C: Edit `config.yaml` directly (Not recommended for production)
 
