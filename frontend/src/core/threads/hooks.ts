@@ -23,6 +23,8 @@ import type {
   StreamingFrameworkReviewMeta,
 } from "./types";
 
+const CHAT_IN_PROGRESS_MESSAGE = "The chat is in progress!";
+
 export type ToolEndEvent = {
   name: string;
   data: unknown;
@@ -39,7 +41,74 @@ export type ThreadStreamOptions = {
 
 export type UseThreadStreamResult = UseStream<AgentThreadState> & {
   streamingFrameworkReview: StreamingFrameworkReviewMeta | null;
+  lastConflictAt: number | null;
 };
+
+function getErrorMessage(error: unknown): string | null {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  if (typeof error === "object" && error !== null && "message" in error) {
+    const message = error.message;
+    if (typeof message === "string" && message.trim()) {
+      return message.trim();
+    }
+  }
+
+  return null;
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+
+  if ("status" in error && typeof error.status === "number") {
+    return error.status;
+  }
+
+  if (
+    "response" in error &&
+    typeof error.response === "object" &&
+    error.response !== null &&
+    "status" in error.response &&
+    typeof error.response.status === "number"
+  ) {
+    return error.response.status;
+  }
+
+  return null;
+}
+
+function isChatInProgressError(error: unknown): boolean {
+  if (getErrorStatus(error) === 409) {
+    return true;
+  }
+
+  const message = getErrorMessage(error)?.toLowerCase() ?? "";
+  return (
+    message.includes(CHAT_IN_PROGRESS_MESSAGE.toLowerCase()) ||
+    message.includes("failed to stream: conflict")
+  );
+}
+
+function normalizeThreadSubmitError(error: unknown): unknown {
+  if (isChatInProgressError(error)) {
+    return new Error(CHAT_IN_PROGRESS_MESSAGE);
+  }
+  return error;
+}
+
+function notifyChatInProgressError(error: unknown, onConflict?: () => void) {
+  if (!isChatInProgressError(error)) {
+    return false;
+  }
+
+  onConflict?.();
+  toast.error(CHAT_IN_PROGRESS_MESSAGE);
+  return true;
+}
 
 async function submitThreadTextMessage({
   thread,
@@ -56,30 +125,34 @@ async function submitThreadTextMessage({
   threadContext: Omit<AgentThreadContext, "thread_id">;
   statePatch?: Omit<Partial<AgentThreadState>, "messages">;
 }) {
-  await thread.submit(
-    {
-      ...(statePatch ?? {}),
-      messages: [
-        {
-          type: "human",
-          content: text ? [{ type: "text", text }] : "",
-        } satisfies Message,
-      ],
-    },
-    {
-      threadId: submitThreadId,
-      streamSubgraphs: true,
-      streamResumable: true,
-      streamMode: ["values", "messages-tuple", "custom"],
-      config: {
-        recursion_limit: 1000,
+  try {
+    await thread.submit(
+      {
+        ...(statePatch ?? {}),
+        messages: [
+          {
+            type: "human",
+            content: text ? [{ type: "text", text }] : "",
+          } satisfies Message,
+        ],
       },
-      context: {
-        ...threadContext,
-        thread_id: threadId,
+      {
+        threadId: submitThreadId,
+        streamSubgraphs: true,
+        streamResumable: true,
+        streamMode: ["values", "messages-tuple", "custom"],
+        config: {
+          recursion_limit: 1000,
+        },
+        context: {
+          ...threadContext,
+          thread_id: threadId,
+        },
       },
-    },
-  );
+    );
+  } catch (error) {
+    throw normalizeThreadSubmitError(error);
+  }
 }
 
 export function useThreadStream({
@@ -135,6 +208,13 @@ export function useThreadStream({
   const updateSubtask = useUpdateSubtask();
   const [streamingFrameworkReview, setStreamingFrameworkReview] =
     useState<StreamingFrameworkReviewMeta | null>(null);
+  const [lastConflictAt, setLastConflictAt] = useState<number | null>(null);
+  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
+
+  const handleStreamError = useCallback((error: unknown) => {
+    setOptimisticMessages([]);
+    notifyChatInProgressError(error, () => setLastConflictAt(Date.now()));
+  }, []);
 
   const DEMO_THREAD_IDS = [
     "7cfa5f8f-a2f8-47ad-acbd-da7137baf990",
@@ -264,9 +344,10 @@ export function useThreadStream({
       );
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
     },
+    onError(error) {
+      handleStreamError(error);
+    },
   });
-
-  const [optimisticMessages, setOptimisticMessages] = useState<Message[]>([]);
   const prevMsgCountRef = useRef(thread.messages.length);
 
   useEffect(() => {
@@ -285,6 +366,7 @@ export function useThreadStream({
       extraContext?: Record<string, unknown>,
     ) => {
       const text = message.text.trim();
+      setLastConflictAt(null);
 
       prevMsgCountRef.current = thread.messages.length;
 
@@ -401,44 +483,50 @@ export function useThreadStream({
           status: "uploaded" as const,
         }));
 
-        await thread.submit(
-          {
-            messages: [
-              {
-                type: "human",
-                content: [
-                  {
-                    type: "text",
-                    text,
-                  },
-                ],
-                additional_kwargs:
-                  filesForSubmit.length > 0 ? { files: filesForSubmit } : {},
+        try {
+          await thread.submit(
+            {
+              messages: [
+                {
+                  type: "human",
+                  content: [
+                    {
+                      type: "text",
+                      text,
+                    },
+                  ],
+                  additional_kwargs:
+                    filesForSubmit.length > 0 ? { files: filesForSubmit } : {},
+                },
+              ],
+            },
+            {
+              threadId: targetThreadId,
+              streamSubgraphs: true,
+              streamResumable: true,
+              streamMode: ["values", "messages-tuple", "custom"],
+              config: {
+                recursion_limit: 1000,
               },
-            ],
-          },
-          {
-            threadId: targetThreadId,
-            streamSubgraphs: true,
-            streamResumable: true,
-            streamMode: ["values", "messages-tuple", "custom"],
-            config: {
-              recursion_limit: 1000,
+              context: {
+                ...extraContext,
+                ...context,
+                thinking_enabled: context.mode !== "flash",
+                is_plan_mode:
+                  context.mode === "pro" || context.mode === "ultra",
+                subagent_enabled: context.mode === "ultra",
+                reasoning_effort: context.reasoning_effort,
+                thread_id: targetThreadId,
+              },
             },
-            context: {
-              ...extraContext,
-              ...context,
-              thinking_enabled: context.mode !== "flash",
-              is_plan_mode: context.mode === "pro" || context.mode === "ultra",
-              subagent_enabled: context.mode === "ultra",
-              reasoning_effort: context.reasoning_effort,
-              thread_id: targetThreadId,
-            },
-          },
-        );
+          );
+        } catch (error) {
+          throw normalizeThreadSubmitError(error);
+        }
         void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
       } catch (error) {
         setOptimisticMessages([]);
+        notifyChatInProgressError(error, () => setLastConflictAt(Date.now()));
         throw error;
       }
     },
@@ -447,6 +535,7 @@ export function useThreadStream({
 
   const threadWithMeta = Object.assign(thread, {
     streamingFrameworkReview,
+    lastConflictAt,
   }) as UseThreadStreamResult;
 
   const baseThread = demoState
@@ -539,15 +628,20 @@ export function useSubmitThread({
         }
       }
 
-      await submitThreadTextMessage({
-        thread,
-        text,
-        threadId,
-        submitThreadId: isNewThread ? threadId! : undefined,
-        threadContext,
-      });
-      void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
-      afterSubmit?.();
+      try {
+        await submitThreadTextMessage({
+          thread,
+          text,
+          threadId,
+          submitThreadId: isNewThread ? threadId! : undefined,
+          threadContext,
+        });
+        void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });
+        afterSubmit?.();
+      } catch (error) {
+        notifyChatInProgressError(error);
+        throw error;
+      }
     },
     [thread, isNewThread, threadId, threadContext, queryClient, afterSubmit],
   );
@@ -699,7 +793,9 @@ export function useConfirmFrameworkReview({
         },
       }).catch((error) => {
         console.error("Failed to continue automatically after framework confirmation:", error);
-        toast.error(autoContinueErrorMessage);
+        if (!notifyChatInProgressError(error)) {
+          toast.error(autoContinueErrorMessage);
+        }
       });
 
       void queryClient.invalidateQueries({ queryKey: ["threads", "search"] });

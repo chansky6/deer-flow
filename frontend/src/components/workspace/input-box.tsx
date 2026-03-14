@@ -146,6 +146,10 @@ export function InputBox({
   const { thread, isMock } = useThread();
   const { textInput } = usePromptInputController();
   const promptRootRef = useRef<HTMLDivElement | null>(null);
+  const lastConflictAt =
+    "lastConflictAt" in thread && typeof thread.lastConflictAt === "number"
+      ? thread.lastConflictAt
+      : null;
 
   const [followups, setFollowups] = useState<string[]>([]);
   const [followupsHidden, setFollowupsHidden] = useState(false);
@@ -312,6 +316,12 @@ export function InputBox({
       return;
     }
 
+    if (lastConflictAt !== null) {
+      setFollowups([]);
+      setFollowupsLoading(false);
+      return;
+    }
+
     const lastAi = [...thread.messages].reverse().find((m) => m.type === "ai");
     const lastAiId = lastAi?.id ?? null;
     if (!lastAiId || lastAiId === lastGeneratedForAiIdRef.current) {
@@ -369,7 +379,15 @@ export function InputBox({
       });
 
     return () => controller.abort();
-  }, [context.model_name, disabled, isMock, status, thread.messages, threadId]);
+  }, [
+    context.model_name,
+    disabled,
+    isMock,
+    lastConflictAt,
+    status,
+    thread.messages,
+    threadId,
+  ]);
 
   return (
     <div ref={promptRootRef} className="relative">
