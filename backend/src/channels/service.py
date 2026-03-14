@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from src.channels.manager import ChannelManager
+from src.channels.manager import ChannelManager, DEFAULT_LANGGRAPH_URL
 from src.channels.message_bus import MessageBus
 from src.channels.store import ChannelStore
 
@@ -30,7 +30,7 @@ class ChannelService:
         self.bus = MessageBus()
         self.store = ChannelStore()
         config = dict(channels_config or {})
-        langgraph_url = config.pop("langgraph_url", None) or "http://localhost:2024"
+        langgraph_url = config.pop("langgraph_url", None) or DEFAULT_LANGGRAPH_URL
         gateway_url = config.pop("gateway_url", None) or "http://localhost:8001"
         default_session = config.pop("session", None)
         channel_sessions = {

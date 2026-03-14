@@ -21,8 +21,6 @@ services:
         condition: service_started
       gateway:
         condition: service_started
-      langgraph:
-        condition: service_started
     networks:
       - deer-flow-prod
     restart: always
@@ -66,15 +64,13 @@ services:
       - deer-flow-prod
     restart: always
 
-  # ── Gateway API ──
+  # ── Backend Monolith API ──
   gateway:
     build:
       context: ../
       dockerfile: backend/Dockerfile.prod
-    container_name: deer-flow-gateway
-    command: >
-      sh -c "cd backend && uv run uvicorn src.gateway.app:app
-      --host 0.0.0.0 --port 8001 --workers 2"
+    container_name: deer-flow-backend
+    command: supervisord -n -c /app/backend/supervisord.prod.conf
     volumes:
       - ../config.yaml:/app/config.yaml
       - ../extensions_config.json:/app/extensions_config.json
@@ -84,7 +80,6 @@ services:
       - AUTH_DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://deerflow:change-me@postgres:5432/deerflow}
       - DEER_FLOW_POSTGRES_URL=${DEER_FLOW_POSTGRES_URL:-postgresql://deerflow:change-me@postgres:5432/deerflow}
       - INTERNAL_AUTH_JWT_SECRET=${INTERNAL_AUTH_JWT_SECRET:-default-change-me-in-production}
-      - LANGGRAPH_UPSTREAM_URL=http://langgraph:2024
     env_file:
       - ../.env
     depends_on:
@@ -96,39 +91,9 @@ services:
       - deer-flow-prod
     restart: always
 
-  # ── LangGraph Server ──
-  langgraph:
-    build:
-      context: ../
-      dockerfile: backend/Dockerfile.prod
-    container_name: deer-flow-langgraph
-    command: >
-      sh -c "cd backend && exec uv run langgraph dev
-      --no-browser --allow-blocking
-      --host 0.0.0.0 --port 2024"
-    volumes:
-      - ../config.yaml:/app/config.yaml
-      - ../extensions_config.json:/app/extensions_config.json
-      - ../skills:/app/skills
-      - deer-flow-data:/app/backend/.deer-flow
-      - langgraph-state:/app/backend/.langgraph_api
-    environment:
-      - DEER_FLOW_POSTGRES_URL=${DEER_FLOW_POSTGRES_URL:-postgresql://deerflow:change-me@postgres:5432/deerflow}
-    env_file:
-      - ../.env
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - deer-flow-prod
-    restart: always
-    stop_grace_period: 30s
-    stop_signal: SIGTERM
-
 # ── Volumes ──
 volumes:
   deer-flow-data:
-  langgraph-state:
   postgres-data:
 
 # ── Networks ──

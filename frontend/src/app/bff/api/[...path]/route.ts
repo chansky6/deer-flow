@@ -5,6 +5,7 @@ import { createInternalAuthToken } from "@/server/auth/internal-jwt";
 import { getAppSession } from "@/server/auth/session";
 
 const BODY_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const CHAT_IN_PROGRESS_MESSAGE = "The chat is in progress!";
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "content-length",
@@ -69,8 +70,11 @@ async function proxy(request: NextRequest, path: string[]) {
 
   const upstream = await fetch(url, init);
   const responseHeaders = copyHeaders(upstream.headers);
+  const statusText =
+    upstream.status === 409 ? CHAT_IN_PROGRESS_MESSAGE : upstream.statusText;
   return new Response(upstream.body, {
     status: upstream.status,
+    statusText,
     headers: responseHeaders,
   });
 }

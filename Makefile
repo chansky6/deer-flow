@@ -153,7 +153,6 @@ setup-sandbox:
 # Start all services
 dev:
 	@echo "Stopping existing services if any..."
-	@-pkill -f "langgraph dev" 2>/dev/null || true
 	@-pkill -f "uvicorn src.gateway.app:app" 2>/dev/null || true
 	@-pkill -f "next dev" 2>/dev/null || true
 	@-nginx -c $(PWD)/docker/nginx/nginx.local.conf -p $(PWD) -s quit 2>/dev/null || true
@@ -167,7 +166,7 @@ dev:
 	@echo "=========================================="
 	@echo ""
 	@echo "Services starting up..."
-	@echo "  → Backend: LangGraph + Gateway"
+	@echo "  → Backend: Monolith API"
 	@echo "  → Frontend: Next.js"
 	@echo "  → Nginx: Reverse Proxy"
 	@echo ""
@@ -189,7 +188,6 @@ dev:
 		trap - INT TERM; \
 		echo ""; \
 		echo "Shutting down services..."; \
-		pkill -f "langgraph dev" 2>/dev/null || true; \
 		pkill -f "uvicorn src.gateway.app:app" 2>/dev/null || true; \
 		pkill -f "next dev" 2>/dev/null || true; \
 		nginx -c $(PWD)/docker/nginx/nginx.local.conf -p $(PWD) -s quit 2>/dev/null || true; \
@@ -202,22 +200,18 @@ dev:
 	}; \
 	trap cleanup INT TERM; \
 	mkdir -p logs; \
-	echo "Starting LangGraph server..."; \
-	cd backend && NO_COLOR=1 uv run langgraph dev --no-browser --allow-blocking --no-reload > ../logs/langgraph.log 2>&1 & \
-	sleep 3; \
-	echo "✓ LangGraph server started on localhost:2024"; \
-	echo "Starting Gateway API..."; \
+	echo "Starting Monolith API..."; \
 	cd backend && uv run uvicorn src.gateway.app:app --host 0.0.0.0 --port 8001 > ../logs/gateway.log 2>&1 & \
 	sleep 3; \
 	if ! lsof -i :8001 -sTCP:LISTEN -t >/dev/null 2>&1; then \
-		echo "✗ Gateway API failed to start. Last log output:"; \
+		echo "✗ Monolith API failed to start. Last log output:"; \
 		tail -60 logs/gateway.log; \
 		echo ""; \
 		echo "Likely configuration errors:"; \
 		grep -E "Failed to load configuration|Environment variable .* not found|config\.yaml.*not found" logs/gateway.log | tail -5 || true; \
 		cleanup; \
 	fi; \
-	echo "✓ Gateway API started on localhost:8001"; \
+	echo "✓ Monolith API started on localhost:8001"; \
 	echo "Starting Frontend..."; \
 	cd frontend && pnpm run dev > ../logs/frontend.log 2>&1 & \
 	sleep 3; \
@@ -232,12 +226,11 @@ dev:
 	echo "=========================================="; \
 	echo ""; \
 	echo "  🌐 Application: http://localhost:2026"; \
-	echo "  📡 API Gateway: http://localhost:2026/api/*"; \
-	echo "  🤖 LangGraph:   http://localhost:2026/api/langgraph/*"; \
+	echo "  📡 API:         http://localhost:2026/api/*"; \
+	echo "  🤖 Runtime:     http://localhost:2026/api/langgraph/*"; \
 	echo ""; \
 	echo "  📋 Logs:"; \
-	echo "     - LangGraph: logs/langgraph.log"; \
-	echo "     - Gateway:   logs/gateway.log"; \
+	echo "     - Backend:   logs/gateway.log"; \
 	echo "     - Frontend:  logs/frontend.log"; \
 	echo "     - Nginx:     logs/nginx.log"; \
 	echo ""; \
@@ -248,7 +241,6 @@ dev:
 # Stop all services
 stop:
 	@echo "Stopping all services..."
-	@-pkill -f "langgraph dev" 2>/dev/null || true
 	@-pkill -f "uvicorn src.gateway.app:app" 2>/dev/null || true
 	@-pkill -f "next dev" 2>/dev/null || true
 	@-nginx -c $(PWD)/docker/nginx/nginx.local.conf -p $(PWD) -s quit 2>/dev/null || true

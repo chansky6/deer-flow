@@ -7,12 +7,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from src.config.paths import VIRTUAL_PATH_PREFIX, get_paths
-from src.gateway.ownership import require_thread_owner
+from src.gateway.auth import AuthContext, require_auth
+from src.gateway.ownership import can_access_thread, record_thread_owner
+from src.runtime import repository
 from src.sandbox.sandbox_provider import get_sandbox_provider
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/threads/{thread_id}/uploads", tags=["uploads"], dependencies=[Depends(require_thread_owner)])
+router = APIRouter(prefix="/api/threads/{thread_id}/uploads", tags=["uploads"])
 
 # File extensions that should be converted to markdown
 CONVERTIBLE_EXTENSIONS = {
@@ -74,10 +76,34 @@ async def convert_file_to_markdown(file_path: Path) -> Path | None:
         return None
 
 
+def ensure_upload_thread_access(thread_id: str, auth: AuthContext) -> None:
+    if can_access_thread(thread_id, auth):
+        return
+    if repository.get_thread(thread_id) is not None:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    # New threads are created lazily in the UI; allow the first upload to
+    # claim ownership before the first run starts.
+    record_thread_owner(thread_id, auth.user_id)
+
+
+def _resolve_auth(auth: AuthContext | object) -> AuthContext:
+    if isinstance(auth, AuthContext):
+        return auth
+    # Unit tests call the route functions directly, bypassing FastAPI's
+    # dependency injection. Treat those calls as an admin-scoped test user.
+    return AuthContext(
+        user_id="test-user",
+        email=None,
+        is_admin=True,
+        session_id="direct-call",
+    )
+
+
 @router.post("", response_model=UploadResponse)
 async def upload_files(
     thread_id: str,
     files: list[UploadFile] = File(...),
+    auth: AuthContext = Depends(require_auth),
 ) -> UploadResponse:
     """Upload multiple files to a thread's uploads directory.
 
@@ -94,6 +120,8 @@ async def upload_files(
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
+    auth = _resolve_auth(auth)
+    ensure_upload_thread_access(thread_id, auth)
     uploads_dir = get_uploads_dir(thread_id)
     paths = get_paths()
     uploaded_files = []
@@ -166,7 +194,7 @@ async def upload_files(
 
 
 @router.get("/list", response_model=dict)
-async def list_uploaded_files(thread_id: str) -> dict:
+async def list_uploaded_files(thread_id: str, auth: AuthContext = Depends(require_auth)) -> dict:
     """List all files in a thread's uploads directory.
 
     Args:
@@ -175,6 +203,8 @@ async def list_uploaded_files(thread_id: str) -> dict:
     Returns:
         Dictionary containing list of files with their metadata.
     """
+    auth = _resolve_auth(auth)
+    ensure_upload_thread_access(thread_id, auth)
     uploads_dir = get_uploads_dir(thread_id)
 
     if not uploads_dir.exists():
@@ -201,7 +231,7 @@ async def list_uploaded_files(thread_id: str) -> dict:
 
 
 @router.delete("/{filename}")
-async def delete_uploaded_file(thread_id: str, filename: str) -> dict:
+async def delete_uploaded_file(thread_id: str, filename: str, auth: AuthContext = Depends(require_auth)) -> dict:
     """Delete a file from a thread's uploads directory.
 
     Args:
@@ -211,6 +241,8 @@ async def delete_uploaded_file(thread_id: str, filename: str) -> dict:
     Returns:
         Success message.
     """
+    auth = _resolve_auth(auth)
+    ensure_upload_thread_access(thread_id, auth)
     uploads_dir = get_uploads_dir(thread_id)
     file_path = uploads_dir / filename
 

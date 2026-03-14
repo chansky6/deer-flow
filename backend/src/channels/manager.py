@@ -1,4 +1,4 @@
-"""ChannelManager — consumes inbound messages and dispatches them to the DeerFlow agent via LangGraph Server."""
+"""ChannelManager — consumes inbound messages and dispatches them to the DeerFlow agent runtime."""
 
 from __future__ import annotations
 
@@ -8,14 +8,18 @@ from collections.abc import Mapping
 from typing import Any
 
 from src.channels.message_bus import InboundMessage, InboundMessageType, MessageBus, OutboundMessage
-from src.gateway.ownership import record_thread_owner
 from src.channels.store import ChannelStore
+from src.gateway.auth import AuthContext
+from src.gateway.ownership import record_thread_owner
+from src.runtime import get_monolith_runtime
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LANGGRAPH_URL = "http://localhost:2024"
+DEFAULT_LANGGRAPH_URL = "inprocess://monolith"
 DEFAULT_GATEWAY_URL = "http://localhost:8001"
 DEFAULT_ASSISTANT_ID = "lead_agent"
+_CHANNEL_SYSTEM_USER_ID = "channel-system"
+_INPROCESS_LANGGRAPH_URLS = {"", "inprocess", "inprocess://monolith", "monolith"}
 
 DEFAULT_RUN_CONFIG: dict[str, Any] = {"recursion_limit": 100}
 DEFAULT_RUN_CONTEXT: dict[str, Any] = {
@@ -23,6 +27,95 @@ DEFAULT_RUN_CONTEXT: dict[str, Any] = {
     "is_plan_mode": False,
     "subagent_enabled": False,
 }
+
+
+def _build_channel_auth(
+    *,
+    user_id: str,
+    email: str | None = None,
+    is_admin: bool = False,
+) -> AuthContext:
+    return AuthContext(
+        user_id=user_id,
+        email=email,
+        is_admin=is_admin,
+        session_id=f"channel:{user_id}",
+    )
+
+
+class _MonolithThreadClient:
+    def __init__(self, assistant_id: str) -> None:
+        self._assistant_id = assistant_id
+
+    async def create(
+        self,
+        *,
+        thread_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        return await get_monolith_runtime().create_thread(
+            thread_id=thread_id,
+            metadata=metadata,
+            auth=_build_channel_auth(user_id=_CHANNEL_SYSTEM_USER_ID),
+            assistant_id=self._assistant_id,
+        )
+
+    async def get(self, thread_id: str, **_: Any) -> dict[str, Any]:
+        thread = await get_monolith_runtime().get_thread(thread_id)
+        if thread is None:
+            raise KeyError(thread_id)
+        return thread
+
+
+class _MonolithRunClient:
+    async def wait(
+        self,
+        thread_id: str,
+        assistant_id: str,
+        *,
+        input: dict[str, Any] | None = None,
+        config: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        multitask_strategy: str | None = None,
+        raise_error: bool = True,
+        **_: Any,
+    ) -> dict[str, Any]:
+        context = _as_dict(context)
+        auth = _build_channel_auth(
+            user_id=str(context.get("user_id") or _CHANNEL_SYSTEM_USER_ID),
+            email=context.get("email") if isinstance(context.get("email"), str) else None,
+            is_admin=bool(context.get("is_admin", False)),
+        )
+        result, _headers = await get_monolith_runtime().run_and_wait(
+            thread_id=thread_id,
+            payload={
+                "assistant_id": assistant_id,
+                "input": input or {},
+                "config": config or {},
+                "context": context,
+                "metadata": metadata or {},
+                "multitask_strategy": multitask_strategy,
+            },
+            auth=auth,
+        )
+        if (
+            raise_error
+            and isinstance(result, dict)
+            and isinstance(result.get("__error__"), dict)
+            and "error" in result["__error__"]
+            and "message" in result["__error__"]
+        ):
+            error = result["__error__"]
+            raise RuntimeError(f"{error['error']}: {error['message']}")
+        return result
+
+
+class _MonolithChannelClient:
+    def __init__(self, assistant_id: str) -> None:
+        self.threads = _MonolithThreadClient(assistant_id)
+        self.runs = _MonolithRunClient()
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -134,7 +227,7 @@ class ChannelManager:
     """Core dispatcher that bridges IM channels to the DeerFlow agent.
 
     It reads from the MessageBus inbound queue, creates/reuses threads on
-    the LangGraph Server, sends messages via ``runs.wait``, and publishes
+    the LangGraph-compatible runtime, sends messages via ``runs.wait``, and publishes
     outbound responses back through the bus.
     """
 
@@ -144,7 +237,7 @@ class ChannelManager:
         store: ChannelStore,
         *,
         max_concurrency: int = 5,
-        langgraph_url: str = DEFAULT_LANGGRAPH_URL,
+        langgraph_url: str | None = DEFAULT_LANGGRAPH_URL,
         gateway_url: str = DEFAULT_GATEWAY_URL,
         assistant_id: str = DEFAULT_ASSISTANT_ID,
         default_session: dict[str, Any] | None = None,
@@ -198,14 +291,17 @@ class ChannelManager:
 
         return assistant_id, run_config, run_context
 
-    # -- LangGraph SDK client (lazy) ----------------------------------------
+    # -- LangGraph-compatible client (lazy) ----------------------------------
 
     def _get_client(self):
-        """Return the ``langgraph_sdk`` async client, creating it on first use."""
+        """Return the runtime client, creating it on first use."""
         if self._client is None:
-            from langgraph_sdk import get_client
+            if self._langgraph_url in _INPROCESS_LANGGRAPH_URLS or self._langgraph_url is None:
+                self._client = _MonolithChannelClient(self._assistant_id)
+            else:
+                from langgraph_sdk import get_client
 
-            self._client = get_client(url=self._langgraph_url)
+                self._client = get_client(url=self._langgraph_url)
         return self._client
 
     # -- lifecycle ---------------------------------------------------------
@@ -280,7 +376,7 @@ class ChannelManager:
     # -- chat handling -----------------------------------------------------
 
     async def _create_thread(self, client, msg: InboundMessage) -> str:
-        """Create a new thread on the LangGraph Server and store the mapping."""
+        """Create a new runtime thread and store the chat-thread mapping."""
         thread = await client.threads.create()
         thread_id = thread["thread_id"]
         self.store.set_thread_id(
@@ -291,7 +387,7 @@ class ChannelManager:
             user_id=msg.user_id,
         )
         record_thread_owner(thread_id, msg.user_id)
-        logger.info("[Manager] new thread created on LangGraph Server: thread_id=%s for chat_id=%s topic_id=%s", thread_id, msg.chat_id, msg.topic_id)
+        logger.info("[Manager] new thread created: thread_id=%s for chat_id=%s topic_id=%s", thread_id, msg.chat_id, msg.topic_id)
         return thread_id
 
     async def _handle_chat(self, msg: InboundMessage) -> None:

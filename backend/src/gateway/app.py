@@ -19,6 +19,7 @@ from src.gateway.routers import (
     uploads,
 )
 from src.gateway.routers import config as config_router
+from src.runtime import get_monolith_runtime
 
 # Configure logging
 logging.basicConfig(
@@ -45,10 +46,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     config = get_gateway_config()
     logger.info(f"Starting API Gateway on {config.host}:{config.port}")
 
-    # NOTE: MCP tools initialization is NOT done here because:
-    # 1. Gateway doesn't use MCP tools - they are used by Agents in the LangGraph Server
-    # 2. Gateway and LangGraph Server are separate processes with independent caches
-    # MCP tools are lazily initialized in LangGraph Server when first needed
+    # Initialize monolith runtime storage eagerly so the first request does not
+    # pay table creation / migration cost.
+    try:
+        await get_monolith_runtime().ensure_ready()
+        logger.info("Monolith runtime storage initialized")
+    except Exception:
+        logger.exception("Failed to initialize monolith runtime storage")
+        raise
+
+    # NOTE: MCP tools initialization is still lazy. They are only needed once
+    # an agent run starts, not during HTTP server startup.
 
     # Start IM channel service if any channels are configured
     try:
@@ -68,6 +76,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await stop_channel_service()
     except Exception:
         logger.exception("Failed to stop channel service")
+    try:
+        await get_monolith_runtime().close()
+    except Exception:
+        logger.exception("Failed to close monolith runtime")
     logger.info("Shutting down API Gateway")
 
 
@@ -96,8 +108,8 @@ API Gateway for DeerFlow - A LangGraph-based AI agent backend with sandbox execu
 
 ### Architecture
 
-LangGraph requests are handled by nginx reverse proxy.
-This gateway provides custom endpoints for models, MCP configuration, skills, and artifacts.
+LangGraph-compatible requests are handled in-process by this gateway.
+This API also provides custom endpoints for models, MCP configuration, skills, and artifacts.
         """,
         version="0.1.0",
         lifespan=lifespan,
@@ -167,7 +179,7 @@ This gateway provides custom endpoints for models, MCP configuration, skills, an
     # Skills API is mounted at /api/skills
     app.include_router(skills.router)
 
-    # LangGraph API proxy is mounted at /api/langgraph
+    # In-process LangGraph-compatible API is mounted at /api/langgraph
     app.include_router(langgraph.router)
 
     # Artifacts API is mounted at /api/threads/{thread_id}/artifacts

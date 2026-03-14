@@ -380,6 +380,15 @@ def _make_mock_langgraph_client(thread_id="test-thread-123", run_result=None):
 
 
 class TestChannelManager:
+    def test_get_client_defaults_to_inprocess_runtime(self):
+        from src.channels.manager import ChannelManager, _MonolithChannelClient
+
+        bus = MessageBus()
+        store = ChannelStore(path=Path(tempfile.mkdtemp()) / "store.json")
+        manager = ChannelManager(bus=bus, store=store)
+
+        assert isinstance(manager._get_client(), _MonolithChannelClient)
+
     def test_handle_chat_creates_thread(self):
         from src.channels.manager import ChannelManager
 

@@ -3,9 +3,11 @@ from io import BytesIO
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import UploadFile
 
 from src.gateway.routers import uploads
+from src.gateway.auth import AuthContext
 
 
 def test_upload_files_writes_thread_storage_and_skips_local_sandbox_sync(tmp_path):
@@ -96,3 +98,41 @@ def test_upload_files_rejects_dotdot_and_dot_filenames(tmp_path):
 
     # Only the safely normalised file should exist
     assert [f.name for f in thread_uploads_dir.iterdir()] == ["passwd"]
+
+
+def test_ensure_upload_thread_access_rejects_existing_inaccessible_thread():
+    auth = AuthContext(
+        user_id="user-1",
+        email=None,
+        is_admin=False,
+        session_id="test-session",
+    )
+
+    with (
+        patch.object(uploads, "can_access_thread", return_value=False),
+        patch.object(uploads.repository, "get_thread", return_value={"thread_id": "thread-1"}),
+        patch.object(uploads, "record_thread_owner") as record_owner,
+    ):
+        with pytest.raises(uploads.HTTPException) as exc_info:
+            uploads.ensure_upload_thread_access("thread-1", auth)
+
+    assert exc_info.value.status_code == 404
+    record_owner.assert_not_called()
+
+
+def test_ensure_upload_thread_access_claims_new_thread():
+    auth = AuthContext(
+        user_id="user-1",
+        email=None,
+        is_admin=False,
+        session_id="test-session",
+    )
+
+    with (
+        patch.object(uploads, "can_access_thread", return_value=False),
+        patch.object(uploads.repository, "get_thread", return_value=None),
+        patch.object(uploads, "record_thread_owner") as record_owner,
+    ):
+        uploads.ensure_upload_thread_access("thread-1", auth)
+
+    record_owner.assert_called_once_with("thread-1", "user-1")

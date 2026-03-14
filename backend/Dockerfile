@@ -5,6 +5,7 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -25,4 +26,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 EXPOSE 8001 2024
 
 # Default command (can be overridden in docker-compose)
-CMD ["sh", "-c", "uv run uvicorn src.gateway.app:app --host 0.0.0.0 --port 8001"]
+CMD ["supervisord", "-n", "-c", "/app/backend/supervisord.dev.conf"]
