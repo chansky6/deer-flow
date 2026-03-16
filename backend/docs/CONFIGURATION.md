@@ -23,6 +23,7 @@ models:
 - OpenAI (`langchain_openai:ChatOpenAI`)
 - Anthropic (`langchain_anthropic:ChatAnthropic`)
 - DeepSeek (`langchain_deepseek:ChatDeepSeek`)
+- OpenAI-compatible IAM (`src.models.iam_openai:IAMChatOpenAI`)
 - Any LangChain-compatible provider
 
 For OpenAI-compatible gateways (for example Novita), keep using `langchain_openai:ChatOpenAI` and set `base_url`:
@@ -40,6 +41,24 @@ models:
       extra_body:
         thinking:
           type: enabled
+
+For OpenAI-compatible gateways that require IAM auth, use `IAMChatOpenAI` and configure IAM fields:
+
+```yaml
+models:
+  - name: iam-openai
+    display_name: IAM OpenAI Gateway
+    use: src.models.iam_openai:IAMChatOpenAI
+    model: gpt-4
+    base_url: https://api.example.com/v1
+    api_key: $IAM_API_KEY  # Sent as api_key query parameter
+    iam_token_url: https://iam.example.com/api/token
+    iam_account: $IAM_ACCOUNT
+    iam_secret: $IAM_SECRET
+    iam_project: $IAM_PROJECT
+    iam_enterprise: $IAM_ENTERPRISE
+    iam_auth_header_prefix: ""  # Default: raw token; set "Bearer" if needed
+```
 ```
 
 **Thinking Models**:

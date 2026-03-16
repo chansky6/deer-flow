@@ -46,6 +46,3 @@ dependencies = [
     "langgraph-sdk>=0.1.51",
     "markdown-to-mrkdwn>=0.3.1",
 ]
-
-[dependency-groups]
-dev = ["pytest>=8.0.0", "ruff>=0.14.11"]
