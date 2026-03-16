@@ -30,6 +30,7 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
 import {
@@ -45,6 +46,7 @@ export function RecentChatList() {
   const router = useRouter();
   const pathname = usePathname();
   const { thread_id: threadIdFromPath } = useParams<{ thread_id: string }>();
+  const { isMobile, setOpenMobile } = useSidebar();
   const { data: threads = [] } = useThreads();
   const { mutate: deleteThread } = useDeleteThread();
   const { mutate: renameThread } = useRenameThread();
@@ -136,6 +138,11 @@ export function RecentChatList() {
                         <Link
                           className="text-muted-foreground block w-full whitespace-nowrap group-hover/side-menu-item:overflow-hidden"
                           href={pathOfThread(thread.thread_id)}
+                          onClick={() => {
+                            if (isMobile) {
+                              setOpenMobile(false);
+                            }
+                          }}
                         >
                           {titleOfThread(thread)}
                         </Link>

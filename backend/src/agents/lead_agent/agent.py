@@ -10,6 +10,7 @@ from src.agents.middlewares.framework_review_middleware import FrameworkReviewMi
 from src.agents.middlewares.dangling_tool_call_middleware import DanglingToolCallMiddleware
 from src.agents.middlewares.memory_middleware import MemoryMiddleware
 from src.agents.middlewares.subagent_limit_middleware import SubagentLimitMiddleware
+from src.agents.middlewares.tool_message_sanitizer_middleware import ToolMessageSanitizerMiddleware
 from src.agents.middlewares.thread_data_middleware import ThreadDataMiddleware
 from src.agents.middlewares.title_middleware import TitleMiddleware
 from src.agents.middlewares.uploads_middleware import UploadsMiddleware
@@ -229,6 +230,7 @@ Being proactive with task management demonstrates thoroughness and ensures all r
 # MemoryMiddleware queues conversation for memory update (after TitleMiddleware)
 # ViewImageMiddleware should be before FrameworkReviewMiddleware / ClarificationMiddleware to inject image details before LLM
 # FrameworkReviewMiddleware should be near the end to intercept structured framework review requests
+# ToolMessageSanitizerMiddleware should run late to drop invalid tool messages before model call
 # ClarificationMiddleware should be last to intercept clarification requests after model calls
 def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_name: str | None = None):
     """Build middleware chain based on runtime configuration.
@@ -274,6 +276,7 @@ def _build_middlewares(config: RunnableConfig, model_name: str | None, agent_nam
         middlewares.append(SubagentLimitMiddleware(max_concurrent=max_concurrent_subagents))
 
     middlewares.append(FrameworkReviewMiddleware())
+    middlewares.append(ToolMessageSanitizerMiddleware())
 
     # ClarificationMiddleware should always be last
     middlewares.append(ClarificationMiddleware())

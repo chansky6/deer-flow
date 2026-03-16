@@ -11,12 +11,14 @@ import {
   useThreadChat,
 } from "@/components/workspace/chats";
 import { InputBox } from "@/components/workspace/input-box";
+import { LanguageToggleButton } from "@/components/workspace/language-toggle-button";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import { SignOutButton } from "@/components/workspace/sign-out-button";
 import { ThreadTitle } from "@/components/workspace/thread-title";
 import { TodoList } from "@/components/workspace/todo-list";
 import { Welcome } from "@/components/workspace/welcome";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useI18n } from "@/core/i18n/hooks";
 import {
   extractContentFromMessage,
@@ -368,10 +370,12 @@ export default function ChatPage() {
                 : "bg-background/80 shadow-xs backdrop-blur",
             )}
           >
-            <div className="flex w-full items-center text-sm font-medium">
+            <div className="flex w-full items-center gap-2 text-sm font-medium">
+              <SidebarTrigger className="md:hidden" />
               <ThreadTitle threadId={threadId} thread={thread} />
             </div>
             <div className="flex items-center gap-2">
+              <LanguageToggleButton />
               {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" && <SignOutButton />}
               <ArtifactTrigger />
             </div>

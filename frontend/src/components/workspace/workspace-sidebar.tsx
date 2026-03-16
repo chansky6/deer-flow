@@ -17,7 +17,7 @@ import { WorkspaceNavMenu } from "./workspace-nav-menu";
 export function WorkspaceSidebar({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
-  const { open: isSidebarOpen } = useSidebar();
+  const { open: isSidebarOpen, isMobile } = useSidebar();
   return (
     <>
       <Sidebar variant="sidebar" collapsible="icon" {...props}>
@@ -26,7 +26,7 @@ export function WorkspaceSidebar({
         </SidebarHeader>
         <SidebarContent>
           <WorkspaceNavChatList />
-          {isSidebarOpen && <RecentChatList />}
+          {(isSidebarOpen || isMobile) && <RecentChatList />}
         </SidebarContent>
         <SidebarFooter>
           <WorkspaceNavMenu />

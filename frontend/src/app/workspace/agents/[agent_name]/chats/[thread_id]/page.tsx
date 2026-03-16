@@ -10,6 +10,7 @@ import { AgentWelcome } from "@/components/workspace/agent-welcome";
 import { ArtifactTrigger } from "@/components/workspace/artifacts";
 import { ChatBox, useThreadChat } from "@/components/workspace/chats";
 import { InputBox } from "@/components/workspace/input-box";
+import { LanguageToggleButton } from "@/components/workspace/language-toggle-button";
 import { MessageList } from "@/components/workspace/messages";
 import { ThreadContext } from "@/components/workspace/messages/context";
 import { SignOutButton } from "@/components/workspace/sign-out-button";
@@ -114,6 +115,7 @@ export default function AgentChatPage() {
                   <PlusSquare /> {t.agents.newChat}
                 </Button>
               </Tooltip>
+              <LanguageToggleButton />
               {env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY !== "true" && <SignOutButton />}
               <ArtifactTrigger />
             </div>

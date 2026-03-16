@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 export function WorkspaceHeader({ className }: { className?: string }) {
   const { t } = useI18n();
-  const { state } = useSidebar();
+  const { state, isMobile, setOpenMobile } = useSidebar();
   const pathname = usePathname();
   return (
     <>
@@ -55,7 +55,15 @@ export function WorkspaceHeader({ className }: { className?: string }) {
             isActive={pathname === "/workspace/chats/new"}
             asChild
           >
-            <Link className="text-muted-foreground" href="/workspace/chats/new">
+            <Link
+              className="text-muted-foreground"
+              href="/workspace/chats/new"
+              onClick={() => {
+                if (isMobile) {
+                  setOpenMobile(false);
+                }
+              }}
+            >
               <MessageSquarePlus size={16} />
               <span>{t.sidebar.newChat}</span>
             </Link>

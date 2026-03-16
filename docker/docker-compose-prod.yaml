@@ -6,25 +6,6 @@
 version: '3.8'
 
 services:
-  # ── Reverse Proxy (统一入口) ──
-  nginx:
-    image: nginx:alpine
-    container_name: deer-flow-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro  # 通配符证书 *.bbit.fun
-    depends_on:
-      frontend:
-        condition: service_started
-      gateway:
-        condition: service_started
-    networks:
-      - deer-flow-prod
-    restart: always
-
   # ── PostgreSQL (checkpointer state) ──
   postgres:
     image: postgres:16-alpine
@@ -46,12 +27,14 @@ services:
       - deer-flow-prod
     restart: always
 
-  # ── Frontend (Next.js production build) ──
+  # ── Frontend (Next.js production build, 对外入口) ──
   frontend:
     build:
       context: ../
       dockerfile: frontend/Dockerfile.prod
     container_name: deer-flow-frontend
+    ports:
+      - "3000:3000"
     environment:
       - NODE_ENV=production
       - BACKEND_BASE_URL=${BACKEND_BASE_URL:-http://gateway:8001}
