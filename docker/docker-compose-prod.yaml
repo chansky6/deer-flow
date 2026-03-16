@@ -54,7 +54,7 @@ services:
     container_name: deer-flow-frontend
     environment:
       - NODE_ENV=production
-      - BACKEND_BASE_URL=http://gateway:8001
+      - BACKEND_BASE_URL=${BACKEND_BASE_URL:-http://gateway:8001}
       - AUTH_DATABASE_URL=${AUTH_DATABASE_URL:-postgresql://deerflow:change-me@postgres:5432/deerflow}
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-default-change-me-in-production}
       - INTERNAL_AUTH_JWT_SECRET=${INTERNAL_AUTH_JWT_SECRET:-default-change-me-in-production}
